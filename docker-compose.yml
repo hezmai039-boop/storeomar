@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: atlas
+      POSTGRES_PASSWORD: atlas
+      POSTGRES_DB: atlas
+    ports:
+      - "5432:5432"
+    volumes:
+      - atlas_pg_data:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlas -d atlas"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "4000:4000"
+    environment:
+      PORT: 4000
+      DATABASE_URL: "postgresql://atlas:atlas@postgres:5432/atlas?schema=public"
+      APP_DATABASE_URL: "postgresql://atlas_app:atlas_app@postgres:5432/atlas?schema=public"
+      RESOLVER_DATABASE_URL: "postgresql://atlas_resolver:atlas_resolver@postgres:5432/atlas?schema=public"
+      JWT_SECRET: "change-me-in-any-real-deployment"
+      CORS_ORIGIN: "http://localhost:5173"
+      ENCRYPTION_KEY: "change-me-32-bytes-exactly-please"
+      MOCK_APP_SECRET: "dev-only-mock-secret"
+      # Optional — set to enable LLM-phrased AI replies (see backend/src/lib/llm.ts).
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: "http://localhost:4000"
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+
+volumes:
+  atlas_pg_data:

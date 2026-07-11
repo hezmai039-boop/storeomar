@@ -1,0 +1,518 @@
+// Prisma schema — mirrors docs/01-database-design.md exactly (table/column
+// names match 1:1 so the design doc stays the single source of truth).
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+// ------------------------------------------------------------------
+// 1. Organizational scope
+// ------------------------------------------------------------------
+
+model Organization {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String   @unique
+  status    String   @default("active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  stores      Store[]
+  users       User[]
+  members     OrganizationMember[]
+  auditLogs   AuditLog[]
+
+  @@map("organizations")
+}
+
+model Store {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  name           String
+  slug           String
+  timezone       String   @default("Asia/Riyadh")
+  currency       String   @default("SAR")
+  status         String   @default("active")
+  settings       Json     @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization      Organization        @relation(fields: [organizationId], references: [id])
+  userStoreRoles    UserStoreRole[]
+  channelAccounts   ChannelAccount[]
+  customers         Customer[]
+  conversations     Conversation[]
+  messages          Message[]
+  knowledgeSources  KnowledgeSource[]
+  knowledgeChunks   KnowledgeChunk[]
+  aiAgent           AiAgent?
+  aiSuggestions     AiSuggestedKnowledge[]
+  aiResponseLogs    AiResponseLog[]
+  ticketDepartments TicketDepartment[]
+  tickets           Ticket[]
+  integrations      Integration[]
+  syncedOrders      SyncedOrder[]
+  syncedProducts    SyncedProduct[]
+  dailyMetrics      StoreDailyMetric[]
+  auditLogs         AuditLog[]
+
+  @@unique([organizationId, slug])
+  @@map("stores")
+}
+
+// ------------------------------------------------------------------
+// 2. Identity, roles & flexible per-store access
+// ------------------------------------------------------------------
+
+model User {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  name           String
+  email          String    @unique
+  phone          String?
+  passwordHash   String    @map("password_hash")
+  status         String    @default("active")
+  lastLoginAt    DateTime? @map("last_login_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization       Organization         @relation(fields: [organizationId], references: [id])
+  organizationRoles  OrganizationMember[]
+  storeRoles         UserStoreRole[]      @relation("UserStoreRoleUser")
+  grantedRoles       UserStoreRole[]      @relation("UserStoreRoleGrantedBy")
+  assignedConversations Conversation[]
+  sentMessages       Message[]
+  createdSources     KnowledgeSource[]
+  reviewedSuggestions AiSuggestedKnowledge[]
+  assignedTickets    Ticket[]
+  ticketEvents       TicketEvent[]
+  auditLogs          AuditLog[]
+
+  @@map("users")
+}
+
+model Role {
+  id        String   @id @default(uuid()) @db.Uuid
+  key       String   @unique
+  name      String
+  scope     String // 'organization' | 'store'
+  isSystem  Boolean  @default(true) @map("is_system")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  rolePermissions     RolePermission[]
+  organizationMembers OrganizationMember[]
+  userStoreRoles      UserStoreRole[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String @id @default(uuid()) @db.Uuid
+  key         String @unique
+  module      String
+  description String
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String @map("role_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id])
+  permission Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model OrganizationMember {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  roleId         String   @map("role_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  user         User         @relation(fields: [userId], references: [id])
+  role         Role         @relation(fields: [roleId], references: [id])
+
+  @@unique([organizationId, userId, roleId])
+  @@map("organization_members")
+}
+
+model UserStoreRole {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  storeId   String   @map("store_id") @db.Uuid
+  roleId    String   @map("role_id") @db.Uuid
+  grantedBy String   @map("granted_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user      User  @relation("UserStoreRoleUser", fields: [userId], references: [id])
+  grantedByUser User @relation("UserStoreRoleGrantedBy", fields: [grantedBy], references: [id])
+  store     Store @relation(fields: [storeId], references: [id])
+  role      Role  @relation(fields: [roleId], references: [id])
+
+  @@unique([userId, storeId, roleId])
+  @@map("user_store_roles")
+}
+
+// ------------------------------------------------------------------
+// 3. Channels
+// ------------------------------------------------------------------
+
+model ChannelType {
+  id         String  @id @default(uuid()) @db.Uuid
+  key        String  @unique // whatsapp | instagram | messenger | tiktok
+  name       String
+  adapterKey String  @map("adapter_key")
+  isActive   Boolean @default(true) @map("is_active")
+
+  channelAccounts ChannelAccount[]
+
+  @@map("channel_types")
+}
+
+model ChannelAccount {
+  id                    String    @id @default(uuid()) @db.Uuid
+  storeId               String    @map("store_id") @db.Uuid
+  channelTypeId         String    @map("channel_type_id") @db.Uuid
+  externalAccountId     String    @map("external_account_id")
+  displayName           String    @map("display_name")
+  credentialsEncrypted  Bytes     @map("credentials_encrypted")
+  webhookVerifyToken    String?   @map("webhook_verify_token")
+  status                String    @default("connected")
+  connectedAt           DateTime? @map("connected_at") @db.Timestamptz(6)
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  store       Store         @relation(fields: [storeId], references: [id])
+  channelType ChannelType   @relation(fields: [channelTypeId], references: [id])
+  customers   Customer[]
+  conversations Conversation[]
+
+  @@unique([storeId, channelTypeId, externalAccountId])
+  @@map("channel_accounts")
+}
+
+// ------------------------------------------------------------------
+// 4. Unified inbox: customers, conversations, messages
+// ------------------------------------------------------------------
+
+model Customer {
+  id               String   @id @default(uuid()) @db.Uuid
+  storeId          String   @map("store_id") @db.Uuid
+  channelAccountId String?  @map("channel_account_id") @db.Uuid
+  externalId       String   @map("external_id")
+  name             String?
+  phone            String?
+  email            String?
+  metadata         Json     @default("{}")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  store         Store          @relation(fields: [storeId], references: [id])
+  channelAccount ChannelAccount? @relation(fields: [channelAccountId], references: [id])
+  conversations Conversation[]
+  tickets       Ticket[]
+
+  @@unique([storeId, channelAccountId, externalId])
+  @@map("customers")
+}
+
+model Conversation {
+  id                String    @id @default(uuid()) @db.Uuid
+  storeId           String    @map("store_id") @db.Uuid
+  channelAccountId  String    @map("channel_account_id") @db.Uuid
+  customerId        String    @map("customer_id") @db.Uuid
+  status            String    @default("open")
+  assignedUserId    String?   @map("assigned_user_id") @db.Uuid
+  aiConfidenceLevel String?   @map("ai_confidence_level")
+  lastMessageAt     DateTime? @map("last_message_at") @db.Timestamptz(6)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  store          Store            @relation(fields: [storeId], references: [id])
+  channelAccount ChannelAccount   @relation(fields: [channelAccountId], references: [id])
+  customer       Customer         @relation(fields: [customerId], references: [id])
+  assignedUser   User?            @relation(fields: [assignedUserId], references: [id])
+  messages       Message[]
+  suggestions    AiSuggestedKnowledge[]
+  responseLogs   AiResponseLog[]
+  tickets        Ticket[]
+
+  @@map("conversations")
+}
+
+model Message {
+  id                String   @id @default(uuid()) @db.Uuid
+  conversationId    String   @map("conversation_id") @db.Uuid
+  storeId           String   @map("store_id") @db.Uuid
+  senderType        String   @map("sender_type") // customer | ai | agent | system
+  senderUserId      String?  @map("sender_user_id") @db.Uuid
+  content           String
+  attachments       Json     @default("[]")
+  externalMessageId String?  @map("external_message_id")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+  store        Store        @relation(fields: [storeId], references: [id])
+  senderUser   User?        @relation(fields: [senderUserId], references: [id])
+  responseLog  AiResponseLog?
+
+  @@map("messages")
+}
+
+// ------------------------------------------------------------------
+// 5. Knowledge base & AI agent
+// ------------------------------------------------------------------
+
+model KnowledgeSource {
+  id        String   @id @default(uuid()) @db.Uuid
+  storeId   String   @map("store_id") @db.Uuid
+  type      String // pdf|word|excel|faq|webpage|product|shipping_policy|return_policy|chat_history
+  title     String
+  fileUrl   String?  @map("file_url")
+  rawText   String?  @map("raw_text")
+  status    String   @default("processing")
+  createdBy String   @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  store           Store            @relation(fields: [storeId], references: [id])
+  creator         User             @relation(fields: [createdBy], references: [id])
+  chunks          KnowledgeChunk[]
+
+  @@map("knowledge_sources")
+}
+
+model KnowledgeChunk {
+  id        String                  @id @default(uuid()) @db.Uuid
+  storeId   String                  @map("store_id") @db.Uuid
+  sourceId  String                  @map("source_id") @db.Uuid
+  content   String
+  embedding Unsupported("vector(1536)")?
+  metadata  Json                    @default("{}")
+  createdAt DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  store  Store           @relation(fields: [storeId], references: [id])
+  source KnowledgeSource @relation(fields: [sourceId], references: [id])
+
+  @@map("knowledge_chunks")
+}
+
+model AiAgent {
+  id                      String   @id @default(uuid()) @db.Uuid
+  storeId                 String   @unique @map("store_id") @db.Uuid
+  name                    String
+  persona                 Json     @default("{}")
+  modelProvider           String   @map("model_provider")
+  modelName               String   @map("model_name")
+  confidenceThresholdHigh Decimal  @default(0.85) @map("confidence_threshold_high") @db.Decimal(3, 2)
+  confidenceThresholdLow  Decimal  @default(0.5) @map("confidence_threshold_low") @db.Decimal(3, 2)
+  status                  String   @default("active")
+  createdAt               DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  store Store @relation(fields: [storeId], references: [id])
+
+  @@map("ai_agents")
+}
+
+model AiSuggestedKnowledge {
+  id             String    @id @default(uuid()) @db.Uuid
+  storeId        String    @map("store_id") @db.Uuid
+  conversationId String?   @map("conversation_id") @db.Uuid
+  content        String
+  status         String    @default("pending_review")
+  reviewedBy     String?   @map("reviewed_by") @db.Uuid
+  reviewedAt     DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  store        Store         @relation(fields: [storeId], references: [id])
+  conversation Conversation? @relation(fields: [conversationId], references: [id])
+  reviewer     User?         @relation(fields: [reviewedBy], references: [id])
+
+  @@map("ai_suggested_knowledge")
+}
+
+model AiResponseLog {
+  id               String   @id @default(uuid()) @db.Uuid
+  storeId          String   @map("store_id") @db.Uuid
+  conversationId   String   @map("conversation_id") @db.Uuid
+  messageId        String?  @unique @map("message_id") @db.Uuid
+  confidenceLevel  String   @map("confidence_level")
+  actionTaken      String   @map("action_taken")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  store        Store        @relation(fields: [storeId], references: [id])
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+  message      Message?     @relation(fields: [messageId], references: [id])
+
+  @@map("ai_response_logs")
+}
+
+// ------------------------------------------------------------------
+// 6. Tickets
+// ------------------------------------------------------------------
+
+model TicketDepartment {
+  id      String @id @default(uuid()) @db.Uuid
+  storeId String @map("store_id") @db.Uuid
+  name    String
+
+  store   Store    @relation(fields: [storeId], references: [id])
+  tickets Ticket[]
+
+  @@unique([storeId, name])
+  @@map("ticket_departments")
+}
+
+model Ticket {
+  id                String    @id @default(uuid()) @db.Uuid
+  storeId           String    @map("store_id") @db.Uuid
+  conversationId    String    @map("conversation_id") @db.Uuid
+  customerId        String    @map("customer_id") @db.Uuid
+  departmentId      String?   @map("department_id") @db.Uuid
+  assignedUserId    String?   @map("assigned_user_id") @db.Uuid
+  status            String    @default("open")
+  priority          String    @default("medium")
+  escalationReason  String?   @map("escalation_reason")
+  aiRecommendation  String?   @map("ai_recommendation")
+  attachments       Json      @default("[]")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  resolvedAt        DateTime? @map("resolved_at") @db.Timestamptz(6)
+
+  store        Store             @relation(fields: [storeId], references: [id])
+  conversation Conversation      @relation(fields: [conversationId], references: [id])
+  customer     Customer          @relation(fields: [customerId], references: [id])
+  department   TicketDepartment? @relation(fields: [departmentId], references: [id])
+  assignedUser User?             @relation(fields: [assignedUserId], references: [id])
+  events       TicketEvent[]
+
+  @@map("tickets")
+}
+
+model TicketEvent {
+  id          String   @id @default(uuid()) @db.Uuid
+  ticketId    String   @map("ticket_id") @db.Uuid
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  eventType   String   @map("event_type")
+  payload     Json     @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  ticket    Ticket @relation(fields: [ticketId], references: [id])
+  actorUser User?  @relation(fields: [actorUserId], references: [id])
+
+  @@map("ticket_events")
+}
+
+// ------------------------------------------------------------------
+// 7. Store platform integrations
+// ------------------------------------------------------------------
+
+model Integration {
+  id                   String    @id @default(uuid()) @db.Uuid
+  storeId              String    @map("store_id") @db.Uuid
+  platform             String // salla | zid | shopify | woocommerce
+  credentialsEncrypted Bytes     @map("credentials_encrypted")
+  status               String    @default("connected")
+  lastSyncedAt         DateTime? @map("last_synced_at") @db.Timestamptz(6)
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  store          Store           @relation(fields: [storeId], references: [id])
+  syncedOrders   SyncedOrder[]
+  syncedProducts SyncedProduct[]
+
+  @@unique([storeId, platform])
+  @@map("integrations")
+}
+
+model SyncedOrder {
+  id              String   @id @default(uuid()) @db.Uuid
+  storeId         String   @map("store_id") @db.Uuid
+  integrationId   String   @map("integration_id") @db.Uuid
+  externalOrderId String   @map("external_order_id")
+  customerRef     String?  @map("customer_ref")
+  status          String
+  trackingUrl     String?  @map("tracking_url")
+  rawPayload      Json     @default("{}") @map("raw_payload")
+  syncedAt        DateTime @default(now()) @map("synced_at") @db.Timestamptz(6)
+
+  store       Store       @relation(fields: [storeId], references: [id])
+  integration Integration @relation(fields: [integrationId], references: [id])
+
+  @@unique([storeId, integrationId, externalOrderId])
+  @@map("synced_orders")
+}
+
+model SyncedProduct {
+  id                String   @id @default(uuid()) @db.Uuid
+  storeId           String   @map("store_id") @db.Uuid
+  integrationId     String   @map("integration_id") @db.Uuid
+  externalProductId String   @map("external_product_id")
+  name              String
+  price             Decimal? @db.Decimal(10, 2)
+  currency          String?
+  sizes             Json     @default("[]")
+  rawPayload        Json     @default("{}") @map("raw_payload")
+  syncedAt          DateTime @default(now()) @map("synced_at") @db.Timestamptz(6)
+
+  store       Store       @relation(fields: [storeId], references: [id])
+  integration Integration @relation(fields: [integrationId], references: [id])
+
+  @@unique([storeId, integrationId, externalProductId])
+  @@map("synced_products")
+}
+
+// ------------------------------------------------------------------
+// 8. Reporting & audit
+// ------------------------------------------------------------------
+
+model StoreDailyMetric {
+  id                       String   @id @default(uuid()) @db.Uuid
+  storeId                  String   @map("store_id") @db.Uuid
+  metricDate               DateTime @map("metric_date") @db.Date
+  totalConversations       Int      @default(0) @map("total_conversations")
+  aiResolvedCount          Int      @default(0) @map("ai_resolved_count")
+  escalatedCount           Int      @default(0) @map("escalated_count")
+  avgFirstResponseSeconds  Int?     @map("avg_first_response_seconds")
+  topQuestions             Json     @default("[]") @map("top_questions")
+  topIssues                Json     @default("[]") @map("top_issues")
+  createdAt                DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  store Store @relation(fields: [storeId], references: [id])
+
+  @@unique([storeId, metricDate])
+  @@map("store_daily_metrics")
+}
+
+model AuditLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  storeId        String?  @map("store_id") @db.Uuid
+  actorUserId    String?  @map("actor_user_id") @db.Uuid
+  action         String
+  entityType     String   @map("entity_type")
+  entityId       String?  @map("entity_id") @db.Uuid
+  beforeState    Json?    @map("before_state")
+  afterState     Json?    @map("after_state")
+  ipAddress      String?  @map("ip_address")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  store        Store?       @relation(fields: [storeId], references: [id])
+  actorUser    User?        @relation(fields: [actorUserId], references: [id])
+
+  @@map("audit_logs")
+}

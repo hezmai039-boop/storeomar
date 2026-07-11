@@ -1,0 +1,129 @@
+/* Atlas design tokens — ported from docs/03-design-system.md, same values
+   as the reviewed prototype so this is a continuation, not a redesign. */
+:root {
+  --bg: #f6f7fa;
+  --surface: #ffffff;
+  --surface-2: #eef1f5;
+  --border: #dde2e8;
+  --border-strong: #c4cbd4;
+  --text: #12161d;
+  --text-dim: #5b6472;
+  --text-faint: #8b93a0;
+
+  --accent: #3454d1;
+  --accent-strong: #22368f;
+  --accent-tint: #e8ecfb;
+
+  --good: #16824f;
+  --good-tint: #e4f5ec;
+  --warn: #92600a;
+  --warn-tint: #faf0dd;
+  --critical: #b3261e;
+  --critical-tint: #fbe7e5;
+  --info: #0d6d8c;
+  --info-tint: #e3f3f7;
+
+  --font-body: "Segoe UI", Tahoma, "Noto Sans Arabic", Arial, sans-serif;
+  --font-mono: "SFMono-Regular", "Cascadia Code", Consolas, monospace;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --shadow-2: 0 4px 16px rgba(15, 23, 42, 0.1);
+  --shadow-3: 0 12px 40px rgba(15, 23, 42, 0.18);
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+:root[data-theme="dark"] {
+  --bg: #0d1117;
+  --surface: #151b23;
+  --surface-2: #1b232d;
+  --border: #2a323c;
+  --border-strong: #3a4553;
+  --text: #e9edf3;
+  --text-dim: #9aa7b8;
+  --text-faint: #6b7686;
+  --accent: #7c93ff;
+  --accent-strong: #b0bfff;
+  --accent-tint: #1c234a;
+  --good: #3ecf8e;
+  --good-tint: #123424;
+  --warn: #e0a941;
+  --warn-tint: #3a2c0f;
+  --critical: #ef6259;
+  --critical-tint: #3d1512;
+  --info: #57c2e6;
+  --info-tint: #0f2f38;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1117;
+    --surface: #151b23;
+    --surface-2: #1b232d;
+    --border: #2a323c;
+    --border-strong: #3a4553;
+    --text: #e9edf3;
+    --text-dim: #9aa7b8;
+    --text-faint: #6b7686;
+    --accent: #7c93ff;
+    --accent-strong: #b0bfff;
+    --accent-tint: #1c234a;
+    --good: #3ecf8e;
+    --good-tint: #123424;
+    --warn: #e0a941;
+    --warn-tint: #3a2c0f;
+    --critical: #ef6259;
+    --critical-tint: #3d1512;
+    --info: #57c2e6;
+    --info-tint: #0f2f38;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 14px;
+}
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  border-radius: var(--radius-md); padding: 8px 14px;
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  border: 1px solid transparent; transition: background .12s var(--ease), border-color .12s var(--ease);
+}
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent-strong); }
+.btn-ghost { background: transparent; border-color: var(--border-strong); color: var(--text); }
+.btn-ghost:hover { background: var(--surface-2); }
+.btn-danger { background: transparent; border-color: var(--critical); color: var(--critical); }
+.btn-danger:hover { background: var(--critical-tint); }
+.btn-good { background: transparent; border-color: var(--good); color: var(--good); }
+.btn-good:hover { background: var(--good-tint); }
+.btn-sm { padding: 5px 10px; font-size: 12px; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
+
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: var(--radius-sm);
+}
+.badge-good { background: var(--good-tint); color: var(--good); }
+.badge-warn { background: var(--warn-tint); color: var(--warn); }
+.badge-critical { background: var(--critical-tint); color: var(--critical); }
+.badge-info { background: var(--info-tint); color: var(--info); }
+.badge-neutral { background: var(--surface-2); color: var(--text-dim); }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); }
+
+input, select, textarea {
+  font-family: inherit; font-size: 13px; color: var(--text);
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-md);
+  padding: 8px 10px;
+}

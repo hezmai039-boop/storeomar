@@ -1,0 +1,169 @@
+import { Router } from "express";
+import { resolverPrisma } from "../../db/resolverClient";
+import { withStoreContext } from "../../db/withStoreContext";
+import { asyncHandler } from "../../lib/asyncHandler";
+import { getAdapter } from "./adapters/registry";
+import { runAiPipeline } from "../knowledge/aiPipeline";
+import { createTicketFromConversation } from "../tickets/service";
+import { publish } from "./realtime";
+import { decryptSecret } from "../../lib/crypto";
+
+export const webhooksRouter = Router();
+
+// Meta-style app secrets are per app (shared across every connected page/
+// WABA of that type), not per channel_account — unlike the account's own
+// OAuth token, which IS per-account and lives encrypted in the DB.
+const APP_SECRETS: Record<string, string> = {
+  whatsapp: process.env.WHATSAPP_APP_SECRET ?? "",
+  instagram: process.env.META_APP_SECRET ?? "",
+  messenger: process.env.META_APP_SECRET ?? "",
+  tiktok: process.env.TIKTOK_APP_SECRET ?? "",
+  mock: process.env.MOCK_APP_SECRET ?? "dev-only-mock-secret",
+};
+
+// GET — Meta's webhook subscription handshake (hub.challenge).
+webhooksRouter.get(
+  "/channels/:channelTypeKey/:channelAccountId",
+  asyncHandler(async (req, res) => {
+    const account = await resolverPrisma.channelAccount.findUnique({ where: { id: req.params.channelAccountId } });
+    const verifyToken = req.query["hub.verify_token"];
+    if (account && verifyToken && verifyToken === account.webhookVerifyToken) {
+      return res.status(200).send(req.query["hub.challenge"]);
+    }
+    return res.sendStatus(403);
+  })
+);
+
+// POST — the one unified inbound route for every channel (docs/06-api-design.md §3).
+// Mounted with express.raw() upstream (src/index.ts) so req.body is the
+// untouched Buffer the signature check needs.
+webhooksRouter.post(
+  "/channels/:channelTypeKey/:channelAccountId",
+  asyncHandler(async (req, res) => {
+    const { channelTypeKey, channelAccountId } = req.params;
+    const rawBody = req.body as Buffer;
+
+    const account = await resolverPrisma.channelAccount.findUnique({
+      where: { id: channelAccountId },
+      include: { channelType: true, store: true },
+    });
+    if (!account || account.channelType.key !== channelTypeKey) return res.sendStatus(404);
+
+    const adapter = getAdapter(account.channelType.adapterKey);
+    const signature =
+      (req.header("x-hub-signature-256") as string | undefined) ?? (req.header("x-tiktok-signature") as string | undefined);
+    const appSecret = APP_SECRETS[channelTypeKey] ?? "";
+
+    if (!adapter.verifyWebhookSignature(rawBody, signature, appSecret)) {
+      // Invalid signature = reject before touching the database (docs/06-api-design.md §3).
+      return res.sendStatus(401);
+    }
+
+    const payload = JSON.parse(rawBody.toString("utf8"));
+    const inboundMessages = adapter.parseWebhook(payload);
+
+    for (const inbound of inboundMessages) {
+      await withStoreContext([account.storeId], async (tx) => {
+        const customer = await tx.customer.upsert({
+          where: {
+            storeId_channelAccountId_externalId: {
+              storeId: account.storeId,
+              channelAccountId: account.id,
+              externalId: inbound.externalCustomerId,
+            },
+          },
+          create: {
+            storeId: account.storeId,
+            channelAccountId: account.id,
+            externalId: inbound.externalCustomerId,
+            name: inbound.customerName,
+            phone: inbound.customerPhone,
+          },
+          update: {},
+        });
+
+        let conversation = await tx.conversation.findFirst({
+          where: { storeId: account.storeId, customerId: customer.id, status: { in: ["open", "pending"] } },
+        });
+        if (!conversation) {
+          conversation = await tx.conversation.create({
+            data: { storeId: account.storeId, channelAccountId: account.id, customerId: customer.id },
+          });
+        }
+
+        const inboundMsg = await tx.message.create({
+          data: {
+            conversationId: conversation.id,
+            storeId: account.storeId,
+            senderType: "customer",
+            content: inbound.text,
+            externalMessageId: inbound.externalMessageId,
+          },
+        });
+        await tx.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: new Date() } });
+        publish(account.storeId, { type: "message.created", conversationId: conversation.id, messageId: inboundMsg.id });
+
+        const result = await runAiPipeline(tx, {
+          storeId: account.storeId,
+          storeName: account.store.name,
+          question: inbound.text,
+        });
+
+        await tx.conversation.update({
+          where: { id: conversation.id },
+          data: { aiConfidenceLevel: result.confidenceLevel },
+        });
+
+        if (result.replyText) {
+          const aiMsg = await tx.message.create({
+            data: {
+              conversationId: conversation.id,
+              storeId: account.storeId,
+              senderType: "ai",
+              content: result.replyText,
+            },
+          });
+          await tx.aiResponseLog.create({
+            data: {
+              storeId: account.storeId,
+              conversationId: conversation.id,
+              messageId: aiMsg.id,
+              confidenceLevel: result.confidenceLevel,
+              actionTaken: result.confidenceLevel === "high" ? "answered" : "flagged_for_review",
+            },
+          });
+          try {
+            const credentials = JSON.parse(decryptSecret(account.credentialsEncrypted));
+            await adapter.sendMessage(credentials, { toExternalId: customer.externalId, text: result.replyText });
+          } catch (err) {
+            console.error(`Failed to send AI reply via ${channelTypeKey}:`, err);
+          }
+          publish(account.storeId, { type: "message.created", conversationId: conversation.id, messageId: aiMsg.id });
+        }
+
+        if (result.createTicket) {
+          await tx.conversation.update({ where: { id: conversation.id }, data: { status: "pending" } });
+          await createTicketFromConversation(tx, {
+            storeId: account.storeId,
+            organizationId: account.store.organizationId,
+            conversationId: conversation.id,
+            customerId: customer.id,
+            actorUserId: null,
+            priority: "medium",
+            escalationReason: result.escalationReason,
+          });
+          await tx.aiResponseLog.create({
+            data: {
+              storeId: account.storeId,
+              conversationId: conversation.id,
+              confidenceLevel: result.confidenceLevel,
+              actionTaken: "escalated_to_human",
+            },
+          });
+        }
+      });
+    }
+
+    res.sendStatus(200);
+  })
+);
