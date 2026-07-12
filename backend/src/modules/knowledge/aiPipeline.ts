@@ -11,16 +11,26 @@ export interface AiPipelineResult {
   escalationReason?: string;
 }
 
+export interface AiContext {
+  confidenceLevel: ConfidenceLevel;
+  bestChunkContent: string | null;
+  agentPersona: Prisma.JsonValue;
+}
+
 /**
- * The confidence gate from docs/02-architecture.md §4 — deliberately an
- * internal function, not an HTTP route (matches the "/v1/internal/ai/query
- * is not exposed" boundary in docs/06-api-design.md §4: only
- * modules/channels calls this, directly, in-process).
+ * DB-only half of the confidence gate (docs/02-architecture.md §4) — reads
+ * the agent's thresholds and runs retrieval. Deliberately takes `tx` and
+ * does no network I/O, so callers can run this inside a short-lived
+ * `withStoreContext` transaction and then close it *before* making the LLM
+ * call in `completeAiPipeline` below — a real external HTTP request has no
+ * business holding a Postgres transaction open (Prisma's interactive
+ * transactions default to a 5s timeout; an LLM call routinely takes
+ * longer, which would abort the transaction and lose the write).
  */
-export async function runAiPipeline(
+export async function gatherAiContext(
   tx: Prisma.TransactionClient,
-  params: { storeId: string; storeName: string; question: string }
-): Promise<AiPipelineResult> {
+  params: { storeId: string; question: string }
+): Promise<AiContext> {
   const agent = await tx.aiAgent.findUnique({ where: { storeId: params.storeId } });
   const thresholdHigh = agent ? Number(agent.confidenceThresholdHigh) : 0.85;
   const thresholdLow = agent ? Number(agent.confidenceThresholdLow) : 0.5;
@@ -30,7 +40,22 @@ export async function runAiPipeline(
 
   const confidenceLevel: ConfidenceLevel = score >= thresholdHigh ? "high" : score >= thresholdLow ? "medium" : "low";
 
-  if (confidenceLevel === "low" || !best) {
+  return {
+    confidenceLevel: confidenceLevel === "low" || !best ? "low" : confidenceLevel,
+    bestChunkContent: best?.content ?? null,
+    agentPersona: agent?.persona ?? {},
+  };
+}
+
+/**
+ * Network half — call this *after* the transaction that produced `context`
+ * has already committed. No `tx` in scope here on purpose.
+ */
+export async function completeAiPipeline(
+  context: AiContext,
+  params: { storeName: string; question: string }
+): Promise<AiPipelineResult> {
+  if (context.confidenceLevel === "low" || !context.bestChunkContent) {
     return {
       confidenceLevel: "low",
       replyText: null,
@@ -41,14 +66,14 @@ export async function runAiPipeline(
 
   const grounded = await generateGroundedAnswer({
     storeName: params.storeName,
-    persona: agent?.persona ?? {},
-    knowledgeContext: best.content,
+    persona: context.agentPersona,
+    knowledgeContext: context.bestChunkContent,
     question: params.question,
   });
 
   return {
-    confidenceLevel,
-    replyText: grounded ?? best.content,
+    confidenceLevel: context.confidenceLevel,
+    replyText: grounded ?? context.bestChunkContent,
     createTicket: false,
   };
 }

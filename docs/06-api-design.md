@@ -86,7 +86,8 @@
 
 | Method | Path | الوصف |
 |---|---|---|
-| GET / POST | `/v1/stores/{storeId}/knowledge/sources` | مصادر المعرفة (رفع PDF/Word/Excel أو FAQ يدوي) |
+| GET / POST | `/v1/stores/{storeId}/knowledge/sources` | مصادر المعرفة. POST يقبل إما `multipart/form-data` مع حقل `file` (pdf/word/excel — يُستخرَج النص تلقائيًا عبر pdf-parse/mammoth/exceljs) أو JSON مع `rawText` (faq/webpage/product/policy) |
+| GET | `/v1/stores/{storeId}/knowledge/sources/{id}/file` | تنزيل الملف الأصلي المرفوع (محمي بنفس صلاحيات القراءة) |
 | DELETE | `/v1/stores/{storeId}/knowledge/sources/{id}` | حذف/أرشفة مصدر |
 | GET | `/v1/stores/{storeId}/knowledge/suggestions?status=pending_review` | قائمة المراجعة |
 | POST | `/v1/stores/{storeId}/knowledge/suggestions/{id}/approve` \| `/reject` | فعل واحد لا رجعة فيه لكل اقتراح (يطابق تدفق §5) |

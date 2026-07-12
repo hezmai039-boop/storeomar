@@ -19,10 +19,14 @@ declare
 begin
   foreach t in array tables loop
     execute format('alter table %I enable row level security', t);
-    -- Without FORCE, Postgres skips RLS for the table owner — and in this
-    -- single-user docker-compose setup the app connects AS the owner, so
-    -- this line is what actually makes the policy bite.
-    execute format('alter table %I force row level security', t);
+    -- No FORCE here on purpose: the migrator role (DATABASE_URL) has
+    -- BYPASSRLS, and BYPASSRLS always wins over FORCE regardless — so FORCE
+    -- would be a no-op for that role anyway. What actually enforces
+    -- isolation is that the app's own connection (APP_DATABASE_URL) uses a
+    -- role WITHOUT BYPASSRLS, so ENABLE alone already applies these
+    -- policies to it. Dropping FORCE is what lets this run unchanged
+    -- against providers (e.g. Neon's free tier) that only expose a single
+    -- owner role and won't grant BYPASSRLS to a second one.
     execute format('drop policy if exists store_isolation on %I', t);
 
     if t = 'ticket_events' then
@@ -53,7 +57,6 @@ end $$;
 -- audit_logs: store_id is nullable (organization-level events allowed through),
 -- so the policy accepts either a matching store or an organization-level row.
 alter table audit_logs enable row level security;
-alter table audit_logs force row level security;
 drop policy if exists store_isolation on audit_logs;
 create policy store_isolation on audit_logs
 using (

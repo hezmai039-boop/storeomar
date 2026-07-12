@@ -1,36 +1,29 @@
 services:
-  postgres:
-    image: pgvector/pgvector:pg16
-    environment:
-      POSTGRES_USER: atlas
-      POSTGRES_PASSWORD: atlas
-      POSTGRES_DB: atlas
-    ports:
-      - "5432:5432"
-    volumes:
-      - atlas_pg_data:/var/lib/postgresql/data
-      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U atlas -d atlas"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   backend:
     build:
       context: ./backend
-    depends_on:
-      postgres:
-        condition: service_healthy
     ports:
       - "4000:4000"
+    volumes:
+      - atlas_uploads:/app/uploads
     environment:
+      UPLOADS_DIR: "/app/uploads"
       PORT: 4000
-      DATABASE_URL: "postgresql://atlas:atlas@postgres:5432/atlas?schema=public"
-      APP_DATABASE_URL: "postgresql://atlas_app:atlas_app@postgres:5432/atlas?schema=public"
-      RESOLVER_DATABASE_URL: "postgresql://atlas_resolver:atlas_resolver@postgres:5432/atlas?schema=public"
+      # Free-tier Neon Postgres (external, always-on) — no local Postgres
+      # container needed. Same connection string for all three: Neon's free
+      # plan only exposes one owner role, and that role already bypasses RLS
+      # by default (no FORCE in prisma/rls.sql — see the comment there), so
+      # this keeps the 3-role model's app-level RBAC fully intact, minus the
+      # extra DB-layer isolation check a second, restricted role would add.
+      # Set NEON_DATABASE_URL in your .env file — see .env.example.
+      DATABASE_URL: "${NEON_DATABASE_URL:?Set NEON_DATABASE_URL in your .env file}"
+      APP_DATABASE_URL: "${NEON_DATABASE_URL:?Set NEON_DATABASE_URL in your .env file}"
+      RESOLVER_DATABASE_URL: "${NEON_DATABASE_URL:?Set NEON_DATABASE_URL in your .env file}"
       JWT_SECRET: "change-me-in-any-real-deployment"
-      CORS_ORIGIN: "http://localhost:5173"
+      # The public URL customers open in their browser (e.g. a Cloudflare
+      # Tunnel hostname) — must match exactly or the browser blocks the
+      # frontend's requests as cross-origin. Defaults to local dev.
+      CORS_ORIGIN: "${FRONTEND_PUBLIC_URL:-http://localhost:5173}"
       ENCRYPTION_KEY: "change-me-32-bytes-exactly-please"
       MOCK_APP_SECRET: "dev-only-mock-secret"
       # Optional — set to enable LLM-phrased AI replies (see backend/src/lib/llm.ts).
@@ -40,11 +33,17 @@ services:
     build:
       context: ./frontend
       args:
-        VITE_API_URL: "http://localhost:4000"
+        # The public URL the browser calls for the API (e.g. the OTHER
+        # Cloudflare Tunnel hostname, the one pointed at port 4000). Baked
+        # into the built JS bundle — changing it later requires a rebuild.
+        VITE_API_URL: "${BACKEND_PUBLIC_URL:-http://localhost:4000}"
     depends_on:
       - backend
     ports:
-      - "5173:80"
+      # nginx listens on 10000 inside the container (not 80) so this same
+      # image works unmodified as a Render Docker web service too — Render
+      # expects containers to listen on 10000 by default.
+      - "5173:10000"
 
 volumes:
-  atlas_pg_data:
+  atlas_uploads:

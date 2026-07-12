@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import "./LoginPage.css";
 
 export function LoginPage() {
   const { login, error } = useAuth();
@@ -23,32 +24,34 @@ export function LoginPage() {
   }
 
   return (
-    <div
-      dir="rtl"
-      lang="ar"
-      style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)" }}
-    >
-      <form
-        onSubmit={onSubmit}
-        className="card"
-        style={{ width: 360, padding: 32, display: "flex", flexDirection: "column", gap: 16 }}
-      >
+    <div dir="rtl" lang="ar" className="login-page">
+      <span className="login-blob b1" />
+      <span className="login-blob b2" />
+      <span className="login-blob b3" />
+
+      <form onSubmit={onSubmit} className="login-card atlas-enter">
+        <div className="login-mark">A</div>
         <div>
-          <div style={{ fontWeight: 700, fontSize: 20 }}>Atlas</div>
-          <div style={{ color: "var(--text-dim)", fontSize: 13 }}>تسجيل الدخول إلى منصة إدارة المتاجر</div>
+          <div className="login-title">Atlas</div>
+          <div className="login-sub">تسجيل الدخول إلى منصة إدارة المتاجر</div>
         </div>
-        <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
+
+        <label className="login-field">
           البريد الإلكتروني
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
         </label>
-        <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
+        <label className="login-field">
           كلمة المرور
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         </label>
-        {error && <div style={{ color: "var(--critical)", fontSize: 13 }}>{error}</div>}
-        <button className="btn btn-primary" type="submit" disabled={submitting}>
+
+        {error && <div className="login-error">{error}</div>}
+
+        <button className="btn btn-primary login-submit" type="submit" disabled={submitting}>
           {submitting ? "جارٍ الدخول…" : "دخول"}
         </button>
+
+        <div className="login-footer">Atlas · منصة إدارة خدمة العملاء متعددة المتاجر</div>
       </form>
     </div>
   );

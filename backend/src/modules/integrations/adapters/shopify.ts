@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { IntegrationAdapter, SyncedOrderData, SyncedProductData } from "./types";
+import { timingSafeStringEqual } from "../../../lib/timingSafeEqual";
 
 // Shopify Admin REST API — https://shopify.dev/docs/api/admin-rest
 export const shopifyAdapter: IntegrationAdapter = {
@@ -41,6 +42,6 @@ export const shopifyAdapter: IntegrationAdapter = {
   verifyWebhookSignature(rawBody, signatureHeader, secret) {
     if (!signatureHeader) return false;
     const expected = crypto.createHmac("sha256", secret).update(rawBody).digest("base64");
-    return expected === signatureHeader;
+    return timingSafeStringEqual(expected, signatureHeader, "base64");
   },
 };

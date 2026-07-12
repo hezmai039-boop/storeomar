@@ -1,17 +1,95 @@
-import { useCallback, useEffect, useState } from "react";
-import { api } from "../api/client";
+import { FormEvent, useCallback, useEffect, useState } from "react";
+import { api, ApiClientError } from "../api/client";
 import type { ChannelAccount, Integration } from "../api/types";
 import { useStore } from "../context/StoreContext";
+import { BrandTile } from "../components/BrandIcons";
 
-const CHANNEL_TYPES = ["whatsapp", "instagram", "messenger", "tiktok", "mock"];
-const PLATFORMS = ["salla", "zid", "shopify", "woocommerce", "mock"];
+interface CredentialField {
+  key: string;
+  label: string;
+  placeholder?: string;
+}
+
+const CHANNEL_TYPES: Array<{ key: string; label: string; fields: CredentialField[] }> = [
+  {
+    key: "whatsapp",
+    label: "واتساب",
+    fields: [
+      { key: "phoneNumberId", label: "Phone Number ID" },
+      { key: "accessToken", label: "Access Token" },
+    ],
+  },
+  {
+    key: "instagram",
+    label: "إنستغرام",
+    fields: [
+      { key: "igUserId", label: "Instagram User ID" },
+      { key: "accessToken", label: "Access Token" },
+    ],
+  },
+  {
+    key: "messenger",
+    label: "ماسنجر",
+    fields: [{ key: "pageAccessToken", label: "Page Access Token" }],
+  },
+  {
+    key: "tiktok",
+    label: "تيك توك",
+    fields: [
+      { key: "accessToken", label: "Access Token" },
+      { key: "businessId", label: "Business ID" },
+    ],
+  },
+  { key: "mock", label: "قناة تجريبية (بدون حساب حقيقي)", fields: [] },
+];
+
+const PLATFORMS: Array<{ key: string; label: string; fields: CredentialField[] }> = [
+  { key: "salla", label: "سلة", fields: [{ key: "accessToken", label: "Access Token" }] },
+  {
+    key: "zid",
+    label: "زد",
+    fields: [
+      { key: "accessToken", label: "Access Token" },
+      { key: "managerToken", label: "Manager Token" },
+    ],
+  },
+  {
+    key: "shopify",
+    label: "Shopify",
+    fields: [
+      { key: "shopDomain", label: "Shop Domain", placeholder: "your-store.myshopify.com" },
+      { key: "accessToken", label: "Admin API Access Token" },
+    ],
+  },
+  {
+    key: "woocommerce",
+    label: "WooCommerce",
+    fields: [
+      { key: "storeUrl", label: "Store URL", placeholder: "https://your-store.com" },
+      { key: "consumerKey", label: "Consumer Key" },
+      { key: "consumerSecret", label: "Consumer Secret" },
+    ],
+  },
+  { key: "mock", label: "منصة تجريبية (بدون حساب حقيقي)", fields: [] },
+];
 
 export function SettingsPage() {
   const { activeStore } = useStore();
   const [channels, setChannels] = useState<ChannelAccount[]>([]);
   const [integrations, setIntegrations] = useState<Integration[]>([]);
-  const [newChannelType, setNewChannelType] = useState(CHANNEL_TYPES[0]);
-  const [newPlatform, setNewPlatform] = useState(PLATFORMS[0]);
+
+  const [channelTypeKey, setChannelTypeKey] = useState(CHANNEL_TYPES[0].key);
+  const [channelExternalId, setChannelExternalId] = useState("");
+  const [channelDisplayName, setChannelDisplayName] = useState("");
+  const [channelCreds, setChannelCreds] = useState<Record<string, string>>({});
+  const [channelSubmitting, setChannelSubmitting] = useState(false);
+  const [channelError, setChannelError] = useState<string | null>(null);
+  const [lastVerifyToken, setLastVerifyToken] = useState<{ channelId: string; token: string } | null>(null);
+
+  const [platformKey, setPlatformKey] = useState(PLATFORMS[0].key);
+  const [platformCreds, setPlatformCreds] = useState<Record<string, string>>({});
+  const [platformSubmitting, setPlatformSubmitting] = useState(false);
+  const [platformError, setPlatformError] = useState<string | null>(null);
 
   const reload = useCallback(() => {
     if (!activeStore) return;
@@ -23,21 +101,50 @@ export function SettingsPage() {
 
   if (!activeStore) return <div style={{ color: "var(--text-dim)" }}>اختر متجرًا من القائمة الجانبية أولًا.</div>;
 
-  async function connectChannel() {
-    if (!activeStore) return;
-    await api.post(`/v1/stores/${activeStore.id}/channel-accounts`, {
-      channelTypeKey: newChannelType,
-      externalAccountId: `manual-${Date.now()}`,
-      displayName: `${newChannelType} — ${activeStore!.name}`,
-      credentials: {},
-    });
-    reload();
+  const channelDef = CHANNEL_TYPES.find((c) => c.key === channelTypeKey)!;
+  const platformDef = PLATFORMS.find((p) => p.key === platformKey)!;
+
+  async function connectChannel(e: FormEvent) {
+    e.preventDefault();
+    setChannelError(null);
+    setChannelSubmitting(true);
+    try {
+      const resp = await api.post<{ data: ChannelAccount & { webhookVerifyToken: string | null } }>(
+        `/v1/stores/${activeStore!.id}/channel-accounts`,
+        {
+          channelTypeKey,
+          externalAccountId: channelExternalId || `mock-${Date.now()}`,
+          displayName: channelDisplayName || `${channelDef.label} — ${activeStore!.name}`,
+          credentials: channelCreds,
+        }
+      );
+      if (resp.data.webhookVerifyToken) {
+        setLastVerifyToken({ channelId: resp.data.id, token: resp.data.webhookVerifyToken });
+      }
+      setChannelExternalId("");
+      setChannelDisplayName("");
+      setChannelCreds({});
+      reload();
+    } catch (err) {
+      setChannelError(err instanceof ApiClientError ? err.message : "تعذّر ربط القناة");
+    } finally {
+      setChannelSubmitting(false);
+    }
   }
 
-  async function connectIntegration() {
-    if (!activeStore) return;
-    await api.post(`/v1/stores/${activeStore.id}/integrations`, { platform: newPlatform, credentials: {} });
-    reload();
+  async function connectIntegration(e: FormEvent) {
+    e.preventDefault();
+    setPlatformError(null);
+    setPlatformSubmitting(true);
+    try {
+      await api.post(`/v1/stores/${activeStore!.id}/integrations`, { platform: platformKey, credentials: platformCreds });
+      setPlatformCreds({});
+      reload();
+    } catch (err) {
+      setPlatformError(err instanceof ApiClientError ? err.message : "تعذّر ربط المنصة");
+    } finally {
+      setPlatformSubmitting(false);
+    }
   }
 
   return (
@@ -50,53 +157,154 @@ export function SettingsPage() {
       <section style={{ marginBottom: 32 }}>
         <h2 style={{ fontSize: 15, margin: "0 0 4px" }}>القنوات</h2>
         <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>
-          الربط الفعلي يمر عبر OAuth الرسمي لكل منصة؛ النموذج أدناه يسجّل بيانات اعتماد فارغة لأغراض العرض فقط.
+          أدخل بيانات الاعتماد الحقيقية الصادرة من لوحة المنصة (Meta for Developers لواتساب/إنستغرام/ماسنجر، TikTok
+          for Business للأخير). اختر "قناة تجريبية" للتجربة دون أي حساب حقيقي.
         </p>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 14, marginBottom: 14 }}>
-          {channels.map((c) => (
-            <div key={c.id} className="card" style={{ padding: 16 }}>
-              <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 10 }}>{c.displayName}</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 14, marginBottom: 18 }}>
+          {channels.map((c, i) => (
+            <div key={c.id} className="card card-hover atlas-enter" style={{ padding: 16, animationDelay: `${Math.min(i, 6) * 40}ms` }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                <BrandTile brand={c.channelType.key} />
+                <span style={{ fontWeight: 700, fontSize: 13.5 }}>{c.displayName}</span>
+              </div>
               <span className={`badge ${c.status === "connected" ? "badge-good" : "badge-critical"}`}>{c.status}</span>
             </div>
           ))}
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <select value={newChannelType} onChange={(e) => setNewChannelType(e.target.value)}>
-            {CHANNEL_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-          <button className="btn btn-primary btn-sm" onClick={connectChannel}>
-            ربط قناة
-          </button>
-        </div>
+
+        {lastVerifyToken && (
+          <div className="card atlas-enter" style={{ padding: 16, marginBottom: 18, borderColor: "var(--good)", boxShadow: "0 8px 24px rgba(22,163,74,0.15)" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>
+              رمز التحقق (Verify Token) — انسخه إلى لوحة Meta الآن، لن يُعرض تلقائيًا مرة أخرى
+            </div>
+            <code className="mono" style={{ fontSize: 12.5, wordBreak: "break-all" }}>
+              {lastVerifyToken.token}
+            </code>
+          </div>
+        )}
+
+        <form onSubmit={connectChannel} className="card" style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
+            نوع القناة
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <BrandTile brand={channelTypeKey} sizePx={26} />
+              <select
+                style={{ flex: 1 }}
+                value={channelTypeKey}
+                onChange={(e) => {
+                  setChannelTypeKey(e.target.value);
+                  setChannelCreds({});
+                }}
+              >
+                {CHANNEL_TYPES.map((c) => (
+                  <option key={c.key} value={c.key}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </label>
+
+          {channelTypeKey !== "mock" && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
+                معرّف الحساب الخارجي (Phone Number ID / Page ID)
+                <input value={channelExternalId} onChange={(e) => setChannelExternalId(e.target.value)} required />
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
+                اسم العرض
+                <input value={channelDisplayName} onChange={(e) => setChannelDisplayName(e.target.value)} placeholder={`${channelDef.label} — ${activeStore.name}`} />
+              </label>
+            </div>
+          )}
+
+          {channelDef.fields.length > 0 && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+              {channelDef.fields.map((f) => (
+                <label key={f.key} style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
+                  {f.label}
+                  <input
+                    type="text"
+                    value={channelCreds[f.key] ?? ""}
+                    onChange={(e) => setChannelCreds((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                    required
+                    placeholder={f.placeholder}
+                  />
+                </label>
+              ))}
+            </div>
+          )}
+
+          {channelError && <div style={{ color: "var(--critical)", fontSize: 13 }}>{channelError}</div>}
+          <div>
+            <button className="btn btn-primary btn-sm" type="submit" disabled={channelSubmitting}>
+              {channelSubmitting ? "جارٍ الربط…" : "ربط القناة"}
+            </button>
+          </div>
+        </form>
       </section>
 
       <section>
         <h2 style={{ fontSize: 15, margin: "0 0 4px" }}>التكاملات</h2>
         <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>سلة، زد، Shopify، WooCommerce.</p>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 14, marginBottom: 14 }}>
-          {integrations.map((i) => (
-            <div key={i.id} className="card" style={{ padding: 16 }}>
-              <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 10 }}>{i.platform}</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 14, marginBottom: 18 }}>
+          {integrations.map((i, idx) => (
+            <div key={i.id} className="card card-hover atlas-enter" style={{ padding: 16, animationDelay: `${Math.min(idx, 6) * 40}ms` }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                <BrandTile brand={i.platform} />
+                <span style={{ fontWeight: 700, fontSize: 13.5 }}>{i.platform}</span>
+              </div>
               <span className={`badge ${i.status === "connected" ? "badge-good" : "badge-critical"}`}>{i.status}</span>
             </div>
           ))}
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <select value={newPlatform} onChange={(e) => setNewPlatform(e.target.value)}>
-            {PLATFORMS.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-          <button className="btn btn-primary btn-sm" onClick={connectIntegration}>
-            ربط المنصة
-          </button>
-        </div>
+
+        <form onSubmit={connectIntegration} className="card" style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
+            المنصة
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <BrandTile brand={platformKey} sizePx={26} />
+              <select
+                style={{ flex: 1 }}
+                value={platformKey}
+                onChange={(e) => {
+                  setPlatformKey(e.target.value);
+                  setPlatformCreds({});
+                }}
+              >
+                {PLATFORMS.map((p) => (
+                  <option key={p.key} value={p.key}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </label>
+
+          {platformDef.fields.length > 0 && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+              {platformDef.fields.map((f) => (
+                <label key={f.key} style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
+                  {f.label}
+                  <input
+                    type="text"
+                    value={platformCreds[f.key] ?? ""}
+                    onChange={(e) => setPlatformCreds((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                    required
+                    placeholder={f.placeholder}
+                  />
+                </label>
+              ))}
+            </div>
+          )}
+
+          {platformError && <div style={{ color: "var(--critical)", fontSize: 13 }}>{platformError}</div>}
+          <div>
+            <button className="btn btn-primary btn-sm" type="submit" disabled={platformSubmitting}>
+              {platformSubmitting ? "جارٍ الربط…" : "ربط المنصة"}
+            </button>
+          </div>
+        </form>
       </section>
     </div>
   );

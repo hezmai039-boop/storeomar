@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { IntegrationAdapter } from "./types";
+import { timingSafeStringEqual } from "../../../lib/timingSafeEqual";
 
 // Demo adapter so /sync and the orders lookup work with zero external
 // accounts — returns a couple of fixed sample orders/products.
@@ -25,7 +26,8 @@ export const mockIntegrationAdapter: IntegrationAdapter = {
   },
 
   verifyWebhookSignature(rawBody, signatureHeader, secret) {
+    if (!signatureHeader) return false;
     const expected = crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
-    return signatureHeader === expected;
+    return timingSafeStringEqual(expected, signatureHeader, "hex");
   },
 };

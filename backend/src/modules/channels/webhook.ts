@@ -3,10 +3,11 @@ import { resolverPrisma } from "../../db/resolverClient";
 import { withStoreContext } from "../../db/withStoreContext";
 import { asyncHandler } from "../../lib/asyncHandler";
 import { getAdapter } from "./adapters/registry";
-import { runAiPipeline } from "../knowledge/aiPipeline";
+import { gatherAiContext, completeAiPipeline } from "../knowledge/aiPipeline";
 import { createTicketFromConversation } from "../tickets/service";
 import { publish } from "./realtime";
 import { decryptSecret } from "../../lib/crypto";
+import { webhookRateLimiter } from "../../lib/rateLimit";
 
 export const webhooksRouter = Router();
 
@@ -24,6 +25,7 @@ const APP_SECRETS: Record<string, string> = {
 // GET — Meta's webhook subscription handshake (hub.challenge).
 webhooksRouter.get(
   "/channels/:channelTypeKey/:channelAccountId",
+  webhookRateLimiter,
   asyncHandler(async (req, res) => {
     const account = await resolverPrisma.channelAccount.findUnique({ where: { id: req.params.channelAccountId } });
     const verifyToken = req.query["hub.verify_token"];
@@ -39,6 +41,7 @@ webhooksRouter.get(
 // untouched Buffer the signature check needs.
 webhooksRouter.post(
   "/channels/:channelTypeKey/:channelAccountId",
+  webhookRateLimiter,
   asyncHandler(async (req, res) => {
     const { channelTypeKey, channelAccountId } = req.params;
     const rawBody = req.body as Buffer;
@@ -63,7 +66,10 @@ webhooksRouter.post(
     const inboundMessages = adapter.parseWebhook(payload);
 
     for (const inbound of inboundMessages) {
-      await withStoreContext([account.storeId], async (tx) => {
+      // Phase 1 (short transaction): persist the inbound message. Committed
+      // and closed before anything that makes a network call runs — see the
+      // comment on gatherAiContext in aiPipeline.ts for why.
+      const { customer, conversation, inboundMsgId } = await withStoreContext([account.storeId], async (tx) => {
         const customer = await tx.customer.upsert({
           where: {
             storeId_channelAccountId_externalId: {
@@ -101,19 +107,28 @@ webhooksRouter.post(
           },
         });
         await tx.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: new Date() } });
-        publish(account.storeId, { type: "message.created", conversationId: conversation.id, messageId: inboundMsg.id });
+        return { customer, conversation, inboundMsgId: inboundMsg.id };
+      });
+      publish(account.storeId, { type: "message.created", conversationId: conversation.id, messageId: inboundMsgId });
 
-        const result = await runAiPipeline(tx, {
-          storeId: account.storeId,
-          storeName: account.store.name,
-          question: inbound.text,
-        });
+      // Phase 2 (short transaction, DB reads only): gather retrieval + agent
+      // config for the confidence gate.
+      const context = await withStoreContext([account.storeId], (tx) =>
+        gatherAiContext(tx, { storeId: account.storeId, question: inbound.text })
+      );
 
+      // Phase 3 (network, no transaction open): the LLM call, if retrieval
+      // was confident enough to attempt one.
+      const result = await completeAiPipeline(context, { storeName: account.store.name, question: inbound.text });
+
+      // Phase 4 (short transaction): persist the AI pipeline's outcome.
+      const persisted = await withStoreContext([account.storeId], async (tx) => {
         await tx.conversation.update({
           where: { id: conversation.id },
           data: { aiConfidenceLevel: result.confidenceLevel },
         });
 
+        let aiMsgId: string | null = null;
         if (result.replyText) {
           const aiMsg = await tx.message.create({
             data: {
@@ -123,6 +138,7 @@ webhooksRouter.post(
               content: result.replyText,
             },
           });
+          aiMsgId = aiMsg.id;
           await tx.aiResponseLog.create({
             data: {
               storeId: account.storeId,
@@ -132,13 +148,6 @@ webhooksRouter.post(
               actionTaken: result.confidenceLevel === "high" ? "answered" : "flagged_for_review",
             },
           });
-          try {
-            const credentials = JSON.parse(decryptSecret(account.credentialsEncrypted));
-            await adapter.sendMessage(credentials, { toExternalId: customer.externalId, text: result.replyText });
-          } catch (err) {
-            console.error(`Failed to send AI reply via ${channelTypeKey}:`, err);
-          }
-          publish(account.storeId, { type: "message.created", conversationId: conversation.id, messageId: aiMsg.id });
         }
 
         if (result.createTicket) {
@@ -161,7 +170,19 @@ webhooksRouter.post(
             },
           });
         }
+        return { aiMsgId };
       });
+
+      // Phase 5 (network, no transaction open): tell the channel platform.
+      if (result.replyText && persisted.aiMsgId) {
+        try {
+          const credentials = JSON.parse(decryptSecret(account.credentialsEncrypted));
+          await adapter.sendMessage(credentials, { toExternalId: customer.externalId, text: result.replyText });
+        } catch (err) {
+          console.error(`Failed to send AI reply via ${channelTypeKey}:`, err);
+        }
+        publish(account.storeId, { type: "message.created", conversationId: conversation.id, messageId: persisted.aiMsgId });
+      }
     }
 
     res.sendStatus(200);

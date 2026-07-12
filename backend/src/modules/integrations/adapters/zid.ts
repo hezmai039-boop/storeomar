@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { IntegrationAdapter, SyncedOrderData, SyncedProductData } from "./types";
+import { timingSafeStringEqual } from "../../../lib/timingSafeEqual";
 
 // Zid Open API — https://docs.zid.sa/ (Bearer token + X-Manager-Token per store).
 export const zidAdapter: IntegrationAdapter = {
@@ -40,6 +41,6 @@ export const zidAdapter: IntegrationAdapter = {
   verifyWebhookSignature(rawBody, signatureHeader, secret) {
     if (!signatureHeader) return false;
     const expected = crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
-    return expected === signatureHeader;
+    return timingSafeStringEqual(expected, signatureHeader, "hex");
   },
 };

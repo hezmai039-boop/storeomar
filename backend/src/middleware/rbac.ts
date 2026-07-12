@@ -21,15 +21,19 @@ declare global {
   }
 }
 
-async function resolveAccess(userId: string) {
+async function resolveAccess(userId: string, organizationId: string) {
   const orgMember = await prisma.organizationMember.findFirst({
-    where: { userId },
+    where: { userId, organizationId },
     include: { role: true },
   });
   const isOwner = orgMember?.role.key === ROLES.OWNER;
 
+  // Scoped by store.organizationId, not just userId — a UserStoreRole row
+  // pointing at a store outside this org (e.g. a bug or bad data in the
+  // grant endpoint) must never grant access here, regardless of how it
+  // got created.
   const storeRoleRows = await prisma.userStoreRole.findMany({
-    where: { userId },
+    where: { userId, store: { organizationId } },
     include: { role: true },
   });
   const storeRoles = new Map<string, RoleKey[]>();
@@ -43,7 +47,7 @@ async function resolveAccess(userId: string) {
 
 /** Every store id the current user may touch — owner gets the whole org. */
 export async function accessibleStoreIdsFor(userId: string, organizationId: string): Promise<string[]> {
-  const access = await resolveAccess(userId);
+  const access = await resolveAccess(userId, organizationId);
   if (access.isOwner) {
     const stores = await prisma.store.findMany({ where: { organizationId }, select: { id: true } });
     return stores.map((s) => s.id);
@@ -60,7 +64,7 @@ export function requireStoreAccess() {
   return asyncHandler(async (req: Request, _res: Response, next: NextFunction) => {
     const { userId, organizationId } = req.auth!;
     const storeId = req.params.storeId;
-    const access = await resolveAccess(userId);
+    const access = await resolveAccess(userId, organizationId);
 
     if (access.isOwner) {
       const store = await prisma.store.findFirst({ where: { id: storeId, organizationId } });
@@ -101,8 +105,8 @@ export function requirePermission(permission: PermissionKey) {
 /** For organization-level routes (e.g. cross-store owner reports) — no storeId in the path. */
 export function requireOwner() {
   return asyncHandler(async (req: Request, _res: Response, next: NextFunction) => {
-    const { userId } = req.auth!;
-    const access = await resolveAccess(userId);
+    const { userId, organizationId } = req.auth!;
+    const access = await resolveAccess(userId, organizationId);
     if (!access.isOwner) throw ApiError.permissionDenied("organization.owner");
     next();
   });

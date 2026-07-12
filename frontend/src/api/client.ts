@@ -25,7 +25,10 @@ export class ApiClientError extends Error {
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = { ...(options.headers as Record<string, string>) };
   if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
-  if (options.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+  // FormData bodies must NOT get an explicit Content-Type — the browser
+  // sets it (with the multipart boundary) only when left unset.
+  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
+  if (options.body && !headers["Content-Type"] && !isFormData) headers["Content-Type"] = "application/json";
 
   const resp = await fetch(`${BASE_URL}${path}`, { ...options, headers });
   if (resp.status === 204) return undefined as T;
@@ -42,6 +45,7 @@ export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown, extraHeaders?: Record<string, string>) =>
     request<T>(path, { method: "POST", body: body !== undefined ? JSON.stringify(body) : undefined, headers: extraHeaders }),
+  postForm: <T>(path: string, formData: FormData) => request<T>(path, { method: "POST", body: formData }),
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "PATCH", body: body !== undefined ? JSON.stringify(body) : undefined }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),

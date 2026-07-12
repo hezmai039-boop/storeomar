@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { IntegrationAdapter, SyncedOrderData, SyncedProductData } from "./types";
+import { timingSafeStringEqual } from "../../../lib/timingSafeEqual";
 
 // Salla Merchant API — https://docs.salla.dev/ (OAuth2 Bearer token per store).
 export const sallaAdapter: IntegrationAdapter = {
@@ -42,6 +43,6 @@ export const sallaAdapter: IntegrationAdapter = {
   verifyWebhookSignature(rawBody, signatureHeader, secret) {
     if (!signatureHeader) return false;
     const expected = crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
-    return expected === signatureHeader;
+    return timingSafeStringEqual(expected, signatureHeader, "hex");
   },
 };

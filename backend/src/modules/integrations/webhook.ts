@@ -4,6 +4,7 @@ import { withStoreContext } from "../../db/withStoreContext";
 import { asyncHandler } from "../../lib/asyncHandler";
 import { getIntegrationAdapter } from "./adapters/registry";
 import { decryptSecret } from "../../lib/crypto";
+import { webhookRateLimiter } from "../../lib/rateLimit";
 
 export const integrationWebhooksRouter = Router();
 
@@ -39,6 +40,7 @@ function extractOrderUpdate(platform: string, payload: any): { externalOrderId: 
 // POST /v1/webhooks/integrations/:platformKey/:integrationId
 integrationWebhooksRouter.post(
   "/integrations/:platformKey/:integrationId",
+  webhookRateLimiter,
   asyncHandler(async (req, res) => {
     const { platformKey, integrationId } = req.params;
     const rawBody = req.body as Buffer;

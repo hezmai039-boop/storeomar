@@ -105,6 +105,17 @@ identityRouter.post(
     if (granterOrgRole?.role.key !== ROLES.OWNER) throw ApiError.permissionDenied("users.manage");
 
     const body = grantAccessSchema.parse(req.body);
+
+    const targetUser = await prisma.user.findFirst({
+      where: { id: req.params.userId, organizationId },
+    });
+    if (!targetUser) throw ApiError.storeAccessDenied();
+
+    const targetStore = await prisma.store.findFirst({
+      where: { id: body.storeId, organizationId },
+    });
+    if (!targetStore) throw ApiError.storeAccessDenied();
+
     const role = await prisma.role.findUniqueOrThrow({ where: { key: body.roleKey } });
 
     const grant = await prisma.userStoreRole.upsert({
@@ -143,6 +154,11 @@ identityRouter.delete(
       include: { role: true },
     });
     if (granterOrgRole?.role.key !== ROLES.OWNER) throw ApiError.permissionDenied("users.manage");
+
+    const targetStore = await prisma.store.findFirst({
+      where: { id: req.params.storeId, organizationId },
+    });
+    if (!targetStore) throw ApiError.storeAccessDenied();
 
     await prisma.userStoreRole.deleteMany({
       where: { userId: req.params.userId, storeId: req.params.storeId },

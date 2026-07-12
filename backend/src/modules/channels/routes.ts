@@ -1,4 +1,5 @@
 import { Router } from "express";
+import crypto from "node:crypto";
 import { z } from "zod";
 import { withStoreContext } from "../../db/withStoreContext";
 import { asyncHandler } from "../../lib/asyncHandler";
@@ -48,6 +49,14 @@ channelsRouter.post(
     const body = createChannelSchema.parse(req.body);
     const created = await withStoreContext(req.storeAccess!.accessibleStoreIds, async (tx) => {
       const channelType = await tx.channelType.findUniqueOrThrow({ where: { key: body.channelTypeKey } });
+      // Meta's webhook setup (WhatsApp/Instagram/Messenger) requires a
+      // verify token the developer pastes into their app dashboard during
+      // the GET handshake — generated here since the platform, not the
+      // user, is the source of truth for it (see the GET handler in
+      // webhook.ts). Shown once in this response; not a secret used for
+      // authenticating outbound calls, only for confirming *this* endpoint
+      // during setup, so returning it is safe.
+      const webhookVerifyToken = crypto.randomBytes(24).toString("hex");
       const account = await tx.channelAccount.create({
         data: {
           storeId: req.storeAccess!.storeId,
@@ -55,6 +64,7 @@ channelsRouter.post(
           externalAccountId: body.externalAccountId,
           displayName: body.displayName,
           credentialsEncrypted: encryptSecret(JSON.stringify(body.credentials)),
+          webhookVerifyToken,
           status: "connected",
           connectedAt: new Date(),
         },
@@ -218,6 +228,28 @@ channelsRouter.post(
         },
       });
       await tx.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: new Date() } });
+
+      // Learning loop (docs/04-user-flows.md §3 step 5): a human stepping in
+      // to answer something the AI didn't handle with high confidence is
+      // exactly the signal worth turning into a reviewable suggestion —
+      // never auto-applied, always pending_review (docs/02-architecture.md §4).
+      if (conversation.aiConfidenceLevel !== "high") {
+        const lastCustomerMessage = await tx.message.findFirst({
+          where: { conversationId: conversation.id, senderType: "customer" },
+          orderBy: { createdAt: "desc" },
+        });
+        if (lastCustomerMessage) {
+          await tx.aiSuggestedKnowledge.create({
+            data: {
+              storeId: req.storeAccess!.storeId,
+              conversationId: conversation.id,
+              content: `س: ${lastCustomerMessage.content}\nج: ${body.text}`,
+              status: "pending_review",
+            },
+          });
+        }
+      }
+
       return message;
     });
 

@@ -1,3 +1,11 @@
+-- NOTE: docker-compose.yml no longer runs a local Postgres container by
+-- default — it points at an external free-tier Neon database instead (see
+-- .env.example's NEON_DATABASE_URL). This file is kept for anyone who wants
+-- to self-host Postgres instead of using Neon: add back a `postgres:`
+-- service in docker-compose.yml, mount this file to
+-- /docker-entrypoint-initdb.d/init.sql, and point DATABASE_URL /
+-- APP_DATABASE_URL / RESOLVER_DATABASE_URL at the three roles it creates.
+--
 -- Runs once, automatically, the first time the postgres container starts
 -- (docker-entrypoint-initdb.d convention). Sets up the three-role model
 -- verified by hand while building this project — see

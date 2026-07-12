@@ -26,8 +26,12 @@ export const env = {
   // connection via withStoreContext. See src/db/resolverClient.ts.
   resolverDatabaseUrl: process.env.RESOLVER_DATABASE_URL ?? required("DATABASE_URL"),
   databaseUrl: required("DATABASE_URL"),
-  jwtSecret: required("JWT_SECRET", "dev-only-secret-change-me"),
+  // No fallback for these two: a fallback would mean a deployment that
+  // forgets to set them boots silently with a value visible in this
+  // repo's source — anyone could forge a valid JWT or decrypt every stored
+  // channel/integration credential. Fail loud instead.
+  jwtSecret: required("JWT_SECRET"),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "8h",
   corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:5173",
-  encryptionKey: required("ENCRYPTION_KEY", "dev-only-32-byte-key-change-me!!"),
+  encryptionKey: required("ENCRYPTION_KEY"),
 };

@@ -1,4 +1,5 @@
 import { Router } from "express";
+import multer from "multer";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { withStoreContext } from "../../db/withStoreContext";
@@ -9,9 +10,15 @@ import { requirePermission, requireStoreAccess } from "../../middleware/rbac";
 import { PERMISSIONS } from "../../lib/permissions";
 import { writeAudit } from "../../lib/audit";
 import { buildPageMeta, decodeCursor } from "../../lib/pagination";
+import { extractText, validateMimeMatchesType } from "./fileExtraction";
+import { readStoredFile, saveUploadedFile } from "../../lib/fileStorage";
 
 export const knowledgeRouter = Router({ mergeParams: true });
 knowledgeRouter.use(authenticate, requireStoreAccess());
+
+// 10MB cap, memory storage — files are small policy/FAQ/catalog documents,
+// not media; we extract text immediately and only then write to disk.
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 function chunkText(raw: string): string[] {
   return raw
@@ -20,11 +27,22 @@ function chunkText(raw: string): string[] {
     .filter((s) => s.length > 0);
 }
 
+const SOURCE_TYPES = [
+  "pdf",
+  "word",
+  "excel",
+  "faq",
+  "webpage",
+  "product",
+  "shipping_policy",
+  "return_policy",
+  "chat_history",
+] as const;
+
 const createSourceSchema = z.object({
-  type: z.enum(["pdf", "word", "excel", "faq", "webpage", "product", "shipping_policy", "return_policy", "chat_history"]),
+  type: z.enum(SOURCE_TYPES),
   title: z.string().min(1),
   rawText: z.string().min(1).optional(),
-  fileUrl: z.string().url().optional(),
 });
 
 // GET /v1/stores/:storeId/knowledge/sources
@@ -51,25 +69,53 @@ knowledgeRouter.get(
 // POST /v1/stores/:storeId/knowledge/sources — active immediately; this is
 // the manager-authored path, distinct from AI suggestions below which
 // always require approval (docs/04-user-flows.md §5).
+//
+// Accepts EITHER:
+//  - multipart/form-data with a `file` field (pdf/word/excel) — text is
+//    extracted server-side and the original file is kept for reference, or
+//  - a JSON body with `rawText` (faq/webpage/product/policy text pasted directly).
+// multer only engages for multipart requests; a JSON request passes through
+// untouched and req.body is whatever express.json() already parsed.
 knowledgeRouter.post(
   "/sources",
   requirePermission(PERMISSIONS.KNOWLEDGE_MANAGE),
+  upload.single("file"),
   asyncHandler(async (req, res) => {
     const body = createSourceSchema.parse(req.body);
+    const file = req.file;
+
+    if (!file && !body.rawText) {
+      throw ApiError.badRequest("أرفق ملفًا أو أدخل نصًا — لا يمكن ترك المصدر فارغًا");
+    }
+    if (file) {
+      validateMimeMatchesType(body.type, file.mimetype);
+    }
+
     const created = await withStoreContext(req.storeAccess!.accessibleStoreIds, async (tx) => {
+      let extractedText = body.rawText;
+      let fileUrl: string | undefined;
+
+      if (file) {
+        extractedText = await extractText(file.buffer, body.type);
+        if (!extractedText.trim()) {
+          throw ApiError.badRequest("لم يُستخرَج أي نص قابل للقراءة من هذا الملف");
+        }
+        fileUrl = saveUploadedFile(req.storeAccess!.storeId, file.originalname, file.buffer);
+      }
+
       const source = await tx.knowledgeSource.create({
         data: {
           storeId: req.storeAccess!.storeId,
           type: body.type,
           title: body.title,
-          rawText: body.rawText,
-          fileUrl: body.fileUrl,
+          rawText: extractedText,
+          fileUrl,
           status: "active",
           createdBy: req.auth!.userId,
         },
       });
-      if (body.rawText) {
-        const chunks = chunkText(body.rawText);
+      if (extractedText) {
+        const chunks = chunkText(extractedText);
         await tx.knowledgeChunk.createMany({
           data: chunks.map((content) => ({ storeId: req.storeAccess!.storeId, sourceId: source.id, content })),
         });
@@ -81,11 +127,27 @@ knowledgeRouter.post(
         action: "knowledge.source.created",
         entityType: "knowledge_source",
         entityId: source.id,
-        after: { title: source.title, type: source.type },
+        after: { title: source.title, type: source.type, chunkCount: extractedText ? chunkText(extractedText).length : 0 },
       });
       return source;
     });
     res.status(201).json({ data: created });
+  })
+);
+
+// GET /v1/stores/:storeId/knowledge/sources/:id/file — download the
+// original uploaded document (RBAC-gated, not a public static mount).
+knowledgeRouter.get(
+  "/sources/:id/file",
+  requirePermission(PERMISSIONS.KNOWLEDGE_VIEW),
+  asyncHandler(async (req, res) => {
+    const source = await withStoreContext(req.storeAccess!.accessibleStoreIds, (tx) =>
+      tx.knowledgeSource.findFirst({ where: { id: req.params.id, storeId: req.storeAccess!.storeId } })
+    );
+    if (!source?.fileUrl) throw ApiError.notFound("الملف");
+    const buffer = readStoredFile(source.fileUrl);
+    res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(source.title)}"`);
+    res.send(buffer);
   })
 );
 

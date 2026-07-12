@@ -30,19 +30,37 @@ export function OverviewPage() {
       {error && <div style={{ color: "var(--critical)" }}>{error}</div>}
       {!stores && !error && <div style={{ color: "var(--text-dim)" }}>جارٍ التحميل…</div>}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 14 }}>
-        {stores?.map((s) => (
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 16 }}>
+        {stores?.map((s, i) => (
           <div
             key={s.id}
-            className="card"
-            style={{ padding: "16px 18px", cursor: "pointer" }}
+            className="card card-hover atlas-enter"
+            style={{ padding: "18px 20px", cursor: "pointer", animationDelay: `${Math.min(i, 6) * 40}ms` }}
             onClick={() => {
               setActiveStoreId(s.id);
               navigate("/inbox");
             }}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <b style={{ fontSize: 14.5 }}>{s.name}</b>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+              <div
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 10,
+                  background: "var(--primary-gradient)",
+                  color: "#fff",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  flexShrink: 0,
+                  boxShadow: "0 4px 14px var(--primary-glow)",
+                }}
+              >
+                {s.name.slice(0, 1)}
+              </div>
+              <b style={{ fontSize: 14.5, flex: 1 }}>{s.name}</b>
               <span className={`badge ${s.escalationRate > 30 ? "badge-warn" : "badge-good"}`}>
                 {s.escalationRate > 30 ? "تحتاج انتباهًا" : "بخير"}
               </span>

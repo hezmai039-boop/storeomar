@@ -2,14 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { Conversation, Message } from "../api/types";
 import { useStore } from "../context/StoreContext";
-
-const CHANNEL_COLORS: Record<string, string> = {
-  whatsapp: "#12664f",
-  instagram: "#7a3b69",
-  messenger: "#2c4f8f",
-  tiktok: "#1f2430",
-  mock: "#5b6472",
-};
+import { BrandTile } from "../components/BrandIcons";
 
 export function InboxPage() {
   const { activeStore } = useStore();
@@ -89,7 +82,7 @@ export function InboxPage() {
       </div>
 
       <div
-        className="card"
+        className="card card-glass atlas-enter"
         style={{ display: "grid", gridTemplateColumns: "300px 1fr", height: 620, overflow: "hidden" }}
       >
         <div style={{ borderInlineStart: "1px solid var(--border)", overflowY: "auto" }}>
@@ -105,27 +98,13 @@ export function InboxPage() {
                 gap: 10,
                 padding: "12px 14px",
                 borderBottom: "1px solid var(--border)",
+                borderInlineStart: c.id === selectedId ? "3px solid var(--primary)" : "3px solid transparent",
                 cursor: "pointer",
-                background: c.id === selectedId ? "var(--accent-tint)" : undefined,
+                background: c.id === selectedId ? "var(--primary-tint)" : undefined,
+                transition: "background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease)",
               }}
             >
-              <div
-                style={{
-                  width: 26,
-                  height: 26,
-                  borderRadius: 4,
-                  flexShrink: 0,
-                  background: CHANNEL_COLORS[c.channelAccount.channelType.key] ?? "#5b6472",
-                  color: "#fff",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 11,
-                  fontWeight: 700,
-                }}
-              >
-                {c.channelAccount.channelType.name.slice(0, 2)}
-              </div>
+              <BrandTile brand={c.channelAccount.channelType.key} sizePx={26} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>{c.customer.name ?? c.customer.externalId}</div>
                 <div style={{ marginTop: 4 }}>
@@ -180,20 +159,31 @@ export function InboxPage() {
                     {summary}
                   </div>
                 )}
-                {messages.map((m) => (
+                {messages.map((m, i) => (
                   <div
                     key={m.id}
+                    className="atlas-enter"
                     style={{
                       maxWidth: "62%",
                       alignSelf: m.senderType === "customer" ? "flex-end" : "flex-start",
-                      background: m.senderType === "ai" ? "var(--accent-tint)" : "var(--surface-2)",
+                      background: m.senderType === "ai" ? "var(--primary-gradient)" : "var(--surface-2)",
+                      color: m.senderType === "ai" ? "#fff" : "var(--text)",
                       border: m.senderType === "ai" ? "none" : "1px solid var(--border)",
-                      borderRadius: 6,
-                      padding: "10px 13px",
+                      borderRadius: 12,
+                      padding: "10px 14px",
                       fontSize: 13,
+                      boxShadow: m.senderType === "ai" ? "0 6px 18px var(--primary-glow)" : "none",
+                      animationDelay: `${Math.min(i, 8) * 30}ms`,
                     }}
                   >
-                    <div style={{ fontSize: 10.5, fontWeight: 700, marginBottom: 3, color: m.senderType === "ai" ? "var(--accent-strong)" : "var(--text-dim)" }}>
+                    <div
+                      style={{
+                        fontSize: 10.5,
+                        fontWeight: 700,
+                        marginBottom: 3,
+                        color: m.senderType === "ai" ? "rgba(255,255,255,0.85)" : "var(--text-dim)",
+                      }}
+                    >
                       {m.senderType === "customer" ? "العميل" : m.senderType === "ai" ? "🤖 الوكيل الذكي" : m.senderType === "agent" ? "أنت" : "النظام"}
                     </div>
                     {m.content}
