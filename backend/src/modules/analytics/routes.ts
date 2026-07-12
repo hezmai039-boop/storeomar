@@ -50,7 +50,11 @@ analyticsRouter.get(
     const since = rangeStart(String(req.query.range ?? "7d"));
     const storeIds = await accessibleStoreIdsFor(req.auth!.userId, req.auth!.organizationId);
     const stores = await prisma.store.findMany({ where: { id: { in: storeIds } } });
-    const perStore = await withStoreContext(storeIds, (tx) => Promise.all(stores.map((s) => storeSummary(tx, s.id, since))));
+    const perStore = await withStoreContext(
+      storeIds,
+      (tx) => Promise.all(stores.map((s) => storeSummary(tx, s.id, since))),
+      { timeoutMs: 20000 }
+    );
     res.json({
       data: {
         range: req.query.range ?? "7d",
