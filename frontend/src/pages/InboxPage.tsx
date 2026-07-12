@@ -85,7 +85,7 @@ export function InboxPage() {
         className="card card-glass atlas-enter"
         style={{ display: "grid", gridTemplateColumns: "300px 1fr", height: 620, overflow: "hidden" }}
       >
-        <div style={{ borderInlineStart: "1px solid var(--border)", overflowY: "auto" }}>
+        <div style={{ borderInlineStart: "1px solid var(--border)", overflowY: "auto", minHeight: 0 }}>
           {conversations.length === 0 && (
             <div style={{ padding: 16, color: "var(--text-dim)", fontSize: 13 }}>لا توجد محادثات بعد.</div>
           )}
@@ -127,7 +127,7 @@ export function InboxPage() {
           ))}
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column" }}>
+        <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
           {selected ? (
             <>
               <div
