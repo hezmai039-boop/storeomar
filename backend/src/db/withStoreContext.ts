@@ -16,7 +16,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  */
 export async function withStoreContext<T>(
   storeIds: string[],
-  fn: (tx: Prisma.TransactionClient) => Promise<T>
+  fn: (tx: Prisma.TransactionClient) => Promise<T>,
+  options?: { timeoutMs?: number }
 ): Promise<T> {
   for (const id of storeIds) {
     if (!UUID_RE.test(id)) {
@@ -27,8 +28,17 @@ export async function withStoreContext<T>(
   // all — every RLS policy's `= any(...)` then matches zero rows.
   const joined = storeIds.length > 0 ? storeIds.join(",") : "00000000-0000-0000-0000-000000000000";
 
-  return prisma.$transaction(async (tx) => {
-    await tx.$executeRawUnsafe(`SET LOCAL app.accessible_store_ids = '${joined}'`);
-    return fn(tx);
-  });
+  return prisma.$transaction(
+    async (tx) => {
+      await tx.$executeRawUnsafe(`SET LOCAL app.accessible_store_ids = '${joined}'`);
+      return fn(tx);
+    },
+    // Prisma's default transaction timeout is 5000ms — fine for a single
+    // request, but callers doing many sequential queries per store (e.g.
+    // the cross-store owner report) can exceed it under real network
+    // latency, especially once a request has to cross from Render to
+    // Neon. Let heavy callers opt into a longer budget explicitly rather
+    // than raising the default for every call site.
+    options?.timeoutMs ? { timeout: options.timeoutMs, maxWait: options.timeoutMs } : undefined
+  );
 }
