@@ -73,6 +73,39 @@ tenancyRouter.get(
   })
 );
 
+const updateStoreSchema = z.object({ name: z.string().min(1).max(200) });
+
+// PATCH /v1/stores/:storeId — rename a store (e.g. swap a demo name for the
+// client's real business name). Owner-only, like store creation, since this
+// is store identity rather than day-to-day settings.
+tenancyRouter.patch(
+  "/stores/:storeId",
+  requireStoreAccess(),
+  requirePermission(PERMISSIONS.STORES_MANAGE),
+  asyncHandler(async (req, res) => {
+    const body = updateStoreSchema.parse(req.body);
+    const updated = await withStoreContext(req.storeAccess!.accessibleStoreIds, async (tx) => {
+      const before = await tx.store.findUniqueOrThrow({ where: { id: req.params.storeId } });
+      const store = await tx.store.update({
+        where: { id: req.params.storeId },
+        data: { name: body.name },
+      });
+      await writeAudit(tx, {
+        organizationId: req.auth!.organizationId,
+        storeId: store.id,
+        actorUserId: req.auth!.userId,
+        action: "store.renamed",
+        entityType: "store",
+        entityId: store.id,
+        before: { name: before.name },
+        after: { name: store.name },
+      });
+      return store;
+    });
+    res.json({ data: updated });
+  })
+);
+
 const updateSettingsSchema = z.object({ settings: z.record(z.unknown()) });
 
 // PATCH /v1/stores/:storeId/settings
