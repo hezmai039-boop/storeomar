@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { api, ApiClientError } from "../api/client";
 import type { ChannelAccount, Integration } from "../api/types";
 import { useStore } from "../context/StoreContext";
+import { useAuth } from "../context/AuthContext";
 import { BrandTile } from "../components/BrandIcons";
 
 interface CredentialField {
@@ -75,8 +76,37 @@ const PLATFORMS: Array<{ key: string; label: string; fields: CredentialField[] }
 
 export function SettingsPage() {
   const { activeStore } = useStore();
+  const { refreshMe } = useAuth();
   const [channels, setChannels] = useState<ChannelAccount[]>([]);
   const [integrations, setIntegrations] = useState<Integration[]>([]);
+
+  const [storeName, setStoreName] = useState("");
+  const [storeNameSubmitting, setStoreNameSubmitting] = useState(false);
+  const [storeNameError, setStoreNameError] = useState<string | null>(null);
+  const [storeNameSaved, setStoreNameSaved] = useState(false);
+
+  useEffect(() => {
+    setStoreName(activeStore?.name ?? "");
+    setStoreNameSaved(false);
+    setStoreNameError(null);
+  }, [activeStore?.id, activeStore?.name]);
+
+  async function renameStore(e: FormEvent) {
+    e.preventDefault();
+    if (!activeStore || !storeName.trim()) return;
+    setStoreNameSubmitting(true);
+    setStoreNameError(null);
+    setStoreNameSaved(false);
+    try {
+      await api.patch(`/v1/stores/${activeStore.id}`, { name: storeName.trim() });
+      await refreshMe();
+      setStoreNameSaved(true);
+    } catch (err) {
+      setStoreNameError(err instanceof ApiClientError ? err.message : "تعذّر تعديل اسم المتجر");
+    } finally {
+      setStoreNameSubmitting(false);
+    }
+  }
 
   const [channelTypeKey, setChannelTypeKey] = useState(CHANNEL_TYPES[0].key);
   const [channelExternalId, setChannelExternalId] = useState("");
@@ -153,6 +183,31 @@ export function SettingsPage() {
         <h1 style={{ fontSize: 22, margin: "0 0 4px" }}>الإعدادات</h1>
         <p style={{ margin: 0, color: "var(--text-dim)", fontSize: 13.5 }}>{activeStore.name} — القنوات والتكاملات</p>
       </div>
+
+      <section style={{ marginBottom: 32 }}>
+        <h2 style={{ fontSize: 15, margin: "0 0 4px" }}>اسم المتجر</h2>
+        <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>
+          استبدل الاسم التجريبي باسم المتجر الحقيقي — يظهر فورًا في القائمة الجانبية ونظرة عامة المؤسسة.
+        </p>
+        <form onSubmit={renameStore} className="card" style={{ padding: 20, display: "flex", alignItems: "flex-end", gap: 12 }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, flex: 1 }}>
+            الاسم
+            <input
+              value={storeName}
+              onChange={(e) => {
+                setStoreName(e.target.value);
+                setStoreNameSaved(false);
+              }}
+              required
+            />
+          </label>
+          <button className="btn btn-primary btn-sm" type="submit" disabled={storeNameSubmitting || !storeName.trim()}>
+            {storeNameSubmitting ? "جارٍ الحفظ…" : "حفظ الاسم"}
+          </button>
+          {storeNameSaved && <span className="badge badge-good">تم الحفظ</span>}
+          {storeNameError && <span style={{ color: "var(--critical)", fontSize: 13 }}>{storeNameError}</span>}
+        </form>
+      </section>
 
       <section style={{ marginBottom: 32 }}>
         <h2 style={{ fontSize: 15, margin: "0 0 4px" }}>القنوات</h2>
