@@ -30,6 +30,7 @@
   animation: atlas-float 14s ease-in-out infinite;
 }
 .sidebar > * { position: relative; z-index: 1; }
+.switcher { z-index: 5; }
 
 .brand { display: flex; align-items: center; gap: 10px; padding: 0 6px 20px; }
 .brand .mark {
@@ -57,10 +58,8 @@
 .switcher-btn .label { font-size: 13px; font-weight: 600; }
 .switcher-menu {
   position: absolute; inset-inline: 0; top: calc(100% + 6px);
-  background: var(--surface-glass);
-  -webkit-backdrop-filter: blur(var(--glass-blur));
-  backdrop-filter: blur(var(--glass-blur));
-  border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--surface);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-md);
   box-shadow: var(--shadow-3); padding: 6px; z-index: 40; max-height: 280px; overflow-y: auto;
   animation: atlas-fade-up var(--dur-fast) var(--ease);
 }
