@@ -27,6 +27,8 @@
 | **Backend حقيقي** (كل الموديولات، RLS، RBAC، بوابة ثقة AI) | ✅ `backend/` — يعمل ومُختبَر |
 | **Frontend حقيقي** (React، مطابق لنظام التصميم) | ✅ `frontend/` — يعمل ومُختبَر |
 | ربط حسابات قنوات/تكاملات **حقيقية** (واتساب، سلة...) | ⏸ يتطلب اعتماد المنصات الخارجية — انظر §"ما لم يُختبر بعد" |
+| التحليل التنافسي وخارطة التفوق السوقي | ✅ [docs/09-competitive-strategy-executive-summary.md](docs/09-competitive-strategy-executive-summary.md) |
+| طبقة الذكاء الاصطناعي المستقلة لكل متجر (Backend) | ✅ [docs/17-ai-intelligence-layer.md](docs/17-ai-intelligence-layer.md) — 32 اختبار وحدة/عزل ناجح |
 
 ## الهيكل
 
@@ -59,6 +61,26 @@ docker-compose.yml
 - **[docs/08-running-locally.md](docs/08-running-locally.md)** — كيفية
   التشغيل (Docker Compose أو يدويًا)، بيانات الدخول التجريبية، ولماذا توجد
   ثلاثة أدوار في قاعدة البيانات لا دور واحد.
+- **[docs/09-competitive-strategy-executive-summary.md](docs/09-competitive-strategy-executive-summary.md)**
+  — الملخص التنفيذي للموقع التنافسي وفهرس فصول التحليل التالية.
+- **[docs/10-competitive-business-market-analysis.md](docs/10-competitive-business-market-analysis.md)**
+  — النموذج التجاري، تحليل SWOT، التسويق (GTM)، ونجاح العملاء.
+- **[docs/11-product-feature-gap-analysis.md](docs/11-product-feature-gap-analysis.md)**
+  — تحليل فجوة المزايا الكامل مقابل المنافسين ومصفوفة مقارنة شاملة.
+- **[docs/12-ux-ui-benchmark-and-proposal.md](docs/12-ux-ui-benchmark-and-proposal.md)**
+  — مقارنة تجربة المستخدم ومقترح تحسين مبني على نظام تصميم Atlas.
+- **[docs/13-ai-engine-architecture.md](docs/13-ai-engine-architecture.md)**
+  — تصميم محرك ذكاء اصطناعي متفوق يوسّع بوابة الثقة الحالية.
+- **[docs/14-security-compliance-infrastructure.md](docs/14-security-compliance-infrastructure.md)**
+  — تصميم الأمان والامتثال والبنية التحتية للتوسّع نحو SaaS.
+- **[docs/15-saudi-market-and-restaurant-vertical.md](docs/15-saudi-market-and-restaurant-vertical.md)**
+  — التوطين العميق للسوق السعودي، ونسخة كاملة لقطاع المطاعم.
+- **[docs/16-innovation-features-and-roadmap.md](docs/16-innovation-features-and-roadmap.md)**
+  — أفكار ابتكارية وخارطة طريق المنتج من MVP إلى التوسع العالمي.
+- **[docs/17-ai-intelligence-layer.md](docs/17-ai-intelligence-layer.md)**
+  — طبقة ذكاء اصطناعي مستقلة لكل متجر (وكلاء متخصصون، أدوات على بيانات
+  حية، بحث هجين، ذاكرة متعددة المستويات) — موديول إضافي مُختبَر، بلا أي
+  تعديل على أي تدفق أو واجهة قائمة.
 
 ## أهم قرارات التنفيذ الفعلي (غير موجودة في مستندات التصميم وحدها)
 

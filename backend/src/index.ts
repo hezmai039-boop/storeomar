@@ -14,6 +14,7 @@ import { integrationsRouter } from "./modules/integrations/routes";
 import { integrationWebhooksRouter } from "./modules/integrations/webhook";
 import { analyticsRouter } from "./modules/analytics/routes";
 import { auditRouter } from "./modules/audit/routes";
+import { aiIntelligenceRouter } from "./modules/ai-intelligence/routes";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -38,6 +39,7 @@ app.use("/v1/stores/:storeId", channelsRouter);
 app.use("/v1/stores/:storeId/knowledge", knowledgeRouter);
 app.use("/v1/stores/:storeId", ticketsRouter);
 app.use("/v1/stores/:storeId", integrationsRouter);
+app.use("/v1/stores/:storeId/ai-intelligence", aiIntelligenceRouter);
 app.use("/v1", analyticsRouter);
 app.use("/v1", auditRouter);
 

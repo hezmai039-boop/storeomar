@@ -14,7 +14,9 @@ declare
     'ai_suggested_knowledge', 'ai_response_logs',
     'ticket_departments', 'tickets', 'ticket_events',
     'integrations', 'synced_orders', 'synced_products',
-    'store_daily_metrics'
+    'store_daily_metrics',
+    'ai_specialists', 'ai_tool_invocations', 'ai_orchestrator_runs',
+    'ai_customer_memory', 'ai_conversation_memory', 'ai_business_memory'
   ];
 begin
   foreach t in array tables loop

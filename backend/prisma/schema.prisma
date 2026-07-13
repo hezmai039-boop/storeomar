@@ -61,6 +61,12 @@ model Store {
   syncedProducts    SyncedProduct[]
   dailyMetrics      StoreDailyMetric[]
   auditLogs         AuditLog[]
+  aiSpecialists          AiSpecialist[]
+  aiToolInvocations      AiToolInvocation[]
+  aiOrchestratorRuns     AiOrchestratorRun[]
+  aiCustomerMemories     AiCustomerMemory[]
+  aiConversationMemories AiConversationMemory[]
+  aiBusinessMemories     AiBusinessMemory[]
 
   @@unique([organizationId, slug])
   @@map("stores")
@@ -223,6 +229,7 @@ model Customer {
   channelAccount ChannelAccount? @relation(fields: [channelAccountId], references: [id])
   conversations Conversation[]
   tickets       Ticket[]
+  aiMemories    AiCustomerMemory[]
 
   @@unique([storeId, channelAccountId, externalId])
   @@map("customers")
@@ -248,6 +255,9 @@ model Conversation {
   suggestions    AiSuggestedKnowledge[]
   responseLogs   AiResponseLog[]
   tickets        Ticket[]
+  aiMemory            AiConversationMemory?
+  aiOrchestratorRuns  AiOrchestratorRun[]
+  aiToolInvocations   AiToolInvocation[]
 
   @@map("conversations")
 }
@@ -515,4 +525,111 @@ model AuditLog {
   actorUser    User?        @relation(fields: [actorUserId], references: [id])
 
   @@map("audit_logs")
+}
+
+// ------------------------------------------------------------------
+// 9. AI Intelligence Layer — per-store specialist agents, a tool-calling
+// audit trail, an orchestrator run log, and multi-tier memory. Additive
+// only: no column on any table above is touched. Every model here carries
+// its own store_id and is added to the RLS table list in prisma/rls.sql,
+// exactly like every table in sections 1-8. See docs/17-ai-intelligence-
+// layer.md for the full design rationale.
+// ------------------------------------------------------------------
+
+model AiSpecialist {
+  id           String   @id @default(uuid()) @db.Uuid
+  storeId      String   @map("store_id") @db.Uuid
+  key          String // product | order | customer | shipping | inventory | marketing | knowledge | recommendation | ticket | sales | analytics | supervisor | manager | escalation | workflow | report
+  name         String
+  systemPrompt String   @map("system_prompt")
+  allowedTools Json     @default("[]") @map("allowed_tools") // string[] of tool keys from the code registry (src/modules/ai-intelligence/tools/registry.ts)
+  isEnabled    Boolean  @default(true) @map("is_enabled")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  store Store @relation(fields: [storeId], references: [id])
+
+  @@unique([storeId, key])
+  @@map("ai_specialists")
+}
+
+model AiToolInvocation {
+  id             String   @id @default(uuid()) @db.Uuid
+  storeId        String   @map("store_id") @db.Uuid
+  conversationId String?  @map("conversation_id") @db.Uuid
+  specialistKey  String   @map("specialist_key")
+  toolKey        String   @map("tool_key")
+  arguments      Json     @default("{}")
+  result         Json?
+  success        Boolean
+  errorMessage   String?  @map("error_message")
+  latencyMs      Int?     @map("latency_ms")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  store        Store         @relation(fields: [storeId], references: [id])
+  conversation Conversation? @relation(fields: [conversationId], references: [id])
+
+  @@map("ai_tool_invocations")
+}
+
+model AiOrchestratorRun {
+  id                String   @id @default(uuid()) @db.Uuid
+  storeId           String   @map("store_id") @db.Uuid
+  conversationId    String   @map("conversation_id") @db.Uuid
+  messageId         String?  @map("message_id") @db.Uuid
+  question          String
+  classifiedIntent  String?  @map("classified_intent")
+  routedSpecialists Json     @default("[]") @map("routed_specialists") // string[] of specialist keys
+  confidence        Decimal? @db.Decimal(3, 2)
+  escalated         Boolean  @default(false)
+  replyText         String?  @map("reply_text")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  store        Store        @relation(fields: [storeId], references: [id])
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+
+  @@map("ai_orchestrator_runs")
+}
+
+model AiCustomerMemory {
+  id         String   @id @default(uuid()) @db.Uuid
+  storeId    String   @map("store_id") @db.Uuid
+  customerId String   @map("customer_id") @db.Uuid
+  key        String
+  value      Json
+  source     String   @default("learned") // learned | manual
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  store    Store    @relation(fields: [storeId], references: [id])
+  customer Customer @relation(fields: [customerId], references: [id])
+
+  @@unique([storeId, customerId, key])
+  @@map("ai_customer_memory")
+}
+
+model AiConversationMemory {
+  id             String   @id @default(uuid()) @db.Uuid
+  storeId        String   @map("store_id") @db.Uuid
+  conversationId String   @unique @map("conversation_id") @db.Uuid
+  summary        String?
+  keyFacts       Json     @default("[]") @map("key_facts")
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  store        Store        @relation(fields: [storeId], references: [id])
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+
+  @@map("ai_conversation_memory")
+}
+
+model AiBusinessMemory {
+  id        String   @id @default(uuid()) @db.Uuid
+  storeId   String   @map("store_id") @db.Uuid
+  key       String
+  value     Json
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  store Store @relation(fields: [storeId], references: [id])
+
+  @@unique([storeId, key])
+  @@map("ai_business_memory")
 }

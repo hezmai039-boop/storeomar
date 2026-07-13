@@ -9,7 +9,11 @@ import { Prisma } from "@prisma/client";
 
 const STOPWORDS = new Set(["هل", "من", "في", "على", "و", "ما", "أي", "إلى", "عن", "لا", "أو"]);
 
-function tokenize(text: string): Set<string> {
+// Exported (read-only widening, no behavior change) so
+// src/modules/ai-intelligence/hybridSearch.ts can reuse the exact same
+// tokenizer instead of drifting out of sync with a second copy — the
+// production confidence-gate pipeline below is otherwise untouched.
+export function tokenize(text: string): Set<string> {
   return new Set(
     text
       .toLowerCase()

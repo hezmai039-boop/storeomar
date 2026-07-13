@@ -21,6 +21,8 @@ export const PERMISSIONS = {
   SETTINGS_MANAGE: "settings.manage",
   REPORTS_VIEW: "reports.view",
   AUDIT_VIEW: "audit.view",
+  AI_INTELLIGENCE_VIEW: "ai_intelligence.view",
+  AI_INTELLIGENCE_MANAGE: "ai_intelligence.manage",
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -47,6 +49,7 @@ export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
     PERMISSIONS.TICKETS_VIEW,
     PERMISSIONS.TICKETS_MANAGE,
     PERMISSIONS.KNOWLEDGE_VIEW,
+    PERMISSIONS.AI_INTELLIGENCE_VIEW,
   ],
 };
 
