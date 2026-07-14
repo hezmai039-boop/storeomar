@@ -9,7 +9,41 @@ import { Prisma } from "@prisma/client";
 
 const STOPWORDS = new Set(["هل", "من", "في", "على", "و", "ما", "أي", "إلى", "عن", "لا", "أو"]);
 
-// Exported (read-only widening, no behavior change) so
+// Light Arabic stemming (Larkey-style single-pass prefix/suffix strip) —
+// added after a real store's confidence gate escalated 100% of questions
+// that *were* covered in its knowledge base. Root cause: plain-string
+// token matching treated "الداخلي" (in the stored policy text) and
+// "داخل" (in the customer's actual question) as two unrelated tokens, so
+// a clearly on-topic question like "كم تكلفة الشحن داخل السعودية؟"
+// scored below the confidence threshold and escalated anyway. This does
+// NOT fix true synonym mismatches (e.g. "السعودية" vs "المملكة" — those
+// are different words, not different forms of the same word; that needs
+// the knowledge text itself to use the customer's vocabulary), only
+// same-root inflections, which is the bulk of what was breaking. Single
+// prefix + single suffix pass, longest-match-first, and only when the
+// remaining stem stays at least 3 characters — conservative on purpose,
+// to avoid collapsing genuinely different short words into one token.
+const PREFIXES = ["بال", "كال", "فال", "وال", "لل", "ال", "و", "ف", "ب", "ك", "ل"];
+const SUFFIXES = ["ية", "ون", "ين", "ات", "ها", "هم", "هن", "كم", "نا", "تي", "وا", "ي", "ة", "ه"];
+
+function stem(word: string): string {
+  let w = word.replace(/[أإآ]/g, "ا").replace(/ى/g, "ي");
+  for (const p of PREFIXES) {
+    if (w.startsWith(p) && w.length - p.length >= 3) {
+      w = w.slice(p.length);
+      break;
+    }
+  }
+  for (const s of SUFFIXES) {
+    if (w.endsWith(s) && w.length - s.length >= 3) {
+      w = w.slice(0, -s.length);
+      break;
+    }
+  }
+  return w;
+}
+
+// Exported (read-only widening, no behavior change to callers) so
 // src/modules/ai-intelligence/hybridSearch.ts can reuse the exact same
 // tokenizer instead of drifting out of sync with a second copy — the
 // production confidence-gate pipeline below is otherwise untouched.
@@ -20,6 +54,7 @@ export function tokenize(text: string): Set<string> {
       .replace(/[^\p{L}\p{N}\s]/gu, " ")
       .split(/\s+/)
       .filter((w) => w.length > 1 && !STOPWORDS.has(w))
+      .map(stem)
   );
 }
 
