@@ -91,6 +91,18 @@
 }
 .nav a .ic { width: 16px; text-align: center; font-family: var(--font-mono); font-size: 12px; opacity: .85; }
 .nav a[aria-disabled="true"] { opacity: .4; pointer-events: none; }
+.nav a .nav-badge {
+  margin-inline-start: auto;
+  background: var(--critical);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: var(--radius-pill);
+  animation: atlas-glow-pulse 2.4s ease-in-out infinite;
+}
 
 .sidebar-foot { margin-top: auto; padding: 12px 8px 0; border-top: 1px dashed var(--border); font-size: 11px; color: var(--text-faint); }
 

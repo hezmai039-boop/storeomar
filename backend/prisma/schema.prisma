@@ -67,6 +67,7 @@ model Store {
   aiCustomerMemories     AiCustomerMemory[]
   aiConversationMemories AiConversationMemory[]
   aiBusinessMemories     AiBusinessMemory[]
+  simulationLinks        SimulationLink[]
 
   @@unique([organizationId, slug])
   @@map("stores")
@@ -98,6 +99,7 @@ model User {
   assignedTickets    Ticket[]
   ticketEvents       TicketEvent[]
   auditLogs          AuditLog[]
+  createdSimulationLinks SimulationLink[]
 
   @@map("users")
 }
@@ -632,4 +634,28 @@ model AiBusinessMemory {
 
   @@unique([storeId, key])
   @@map("ai_business_memory")
+}
+
+// ------------------------------------------------------------------
+// 10. Simulation links — shareable, unauthenticated chat links that let
+// a store owner test the live AI pipeline (the exact same
+// gatherAiContext/completeAiPipeline in modules/knowledge/aiPipeline.ts
+// that a real WhatsApp message hits) with real testers, before connecting
+// a real channel account. Additive; does not touch channel_accounts'
+// existing semantics — see docs/19-simulation-links.md.
+// ------------------------------------------------------------------
+
+model SimulationLink {
+  id        String   @id @default(uuid()) @db.Uuid
+  storeId   String   @map("store_id") @db.Uuid
+  token     String   @unique
+  label     String
+  isActive  Boolean  @default(true) @map("is_active")
+  createdBy String   @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  store   Store @relation(fields: [storeId], references: [id])
+  creator User  @relation(fields: [createdBy], references: [id])
+
+  @@map("simulation_links")
 }

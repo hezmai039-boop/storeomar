@@ -1,14 +1,47 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useStore } from "../context/StoreContext";
+import { api } from "../api/client";
+import type { KnowledgeSuggestion } from "../api/types";
 import "./AppShell.css";
+
+const PENDING_REVIEW_POLL_MS = 45_000;
 
 export function AppShell() {
   const { me, logout } = useAuth();
   const { activeStore, setActiveStoreId } = useStore();
   const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
   const navigate = useNavigate();
+
+  // Polling, not the backend's SSE /realtime endpoint — that route requires
+  // a Bearer Authorization header (src/middleware/auth.ts), which the
+  // browser's native EventSource API cannot attach. A 45s poll for "is
+  // there anything to review" is a deliberately simple, robust choice
+  // here — this is an attention cue for managers, not a live chat
+  // stream that needs sub-second delivery.
+  useEffect(() => {
+    if (!activeStore) {
+      setPendingCount(0);
+      return;
+    }
+    let cancelled = false;
+    const load = () => {
+      api
+        .get<{ data: KnowledgeSuggestion[] }>(`/v1/stores/${activeStore.id}/knowledge/suggestions?status=pending_review`)
+        .then((resp) => {
+          if (!cancelled) setPendingCount(resp.data.length);
+        })
+        .catch(() => {});
+    };
+    load();
+    const interval = setInterval(load, PENDING_REVIEW_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [activeStore]);
 
   if (!me) return null;
 
@@ -99,11 +132,21 @@ export function AppShell() {
           <li>
             <NavLink to="/knowledge" className={({ isActive }) => (isActive ? "is-active" : "")}>
               <span className="ic">▤</span> قاعدة المعرفة
+              {pendingCount > 0 && (
+                <span className="nav-badge" title={`${pendingCount} بانتظار المراجعة`}>
+                  {pendingCount}
+                </span>
+              )}
             </NavLink>
           </li>
           <li>
             <NavLink to="/tickets" className={({ isActive }) => (isActive ? "is-active" : "")}>
               <span className="ic">◎</span> التذاكر
+            </NavLink>
+          </li>
+          <li>
+            <NavLink to="/simulation" className={({ isActive }) => (isActive ? "is-active" : "")}>
+              <span className="ic">◐</span> المحاكاة
             </NavLink>
           </li>
           <li>

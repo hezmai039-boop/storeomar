@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/modules/ai-intelligence/__tests__/*.test.ts",
+    "test": "DATABASE_URL=postgresql://test:test@localhost:5432/test JWT_SECRET=test-secret ENCRYPTION_KEY=test-encryption-key-32-bytes-ok tsx --test src/modules/ai-intelligence/__tests__/*.test.ts src/modules/simulation/__tests__/*.test.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
     "prisma:migrate:dev": "prisma migrate dev",

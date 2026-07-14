@@ -15,6 +15,8 @@ import { integrationWebhooksRouter } from "./modules/integrations/webhook";
 import { analyticsRouter } from "./modules/analytics/routes";
 import { auditRouter } from "./modules/audit/routes";
 import { aiIntelligenceRouter } from "./modules/ai-intelligence/routes";
+import { simulationRouter } from "./modules/simulation/routes";
+import { simulationPublicRouter } from "./modules/simulation/publicRoutes";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -40,6 +42,8 @@ app.use("/v1/stores/:storeId/knowledge", knowledgeRouter);
 app.use("/v1/stores/:storeId", ticketsRouter);
 app.use("/v1/stores/:storeId", integrationsRouter);
 app.use("/v1/stores/:storeId/ai-intelligence", aiIntelligenceRouter);
+app.use("/v1/stores/:storeId/simulation-links", simulationRouter);
+app.use("/v1/public/simulate", simulationPublicRouter);
 app.use("/v1", analyticsRouter);
 app.use("/v1", auditRouter);
 

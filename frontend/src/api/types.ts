@@ -98,3 +98,11 @@ export interface PageMeta {
   next_cursor: string | null;
   has_more: boolean;
 }
+
+export interface SimulationLink {
+  id: string;
+  token: string;
+  label: string;
+  isActive: boolean;
+  createdAt: string;
+}

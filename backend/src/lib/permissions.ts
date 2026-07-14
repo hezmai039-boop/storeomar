@@ -23,6 +23,7 @@ export const PERMISSIONS = {
   AUDIT_VIEW: "audit.view",
   AI_INTELLIGENCE_VIEW: "ai_intelligence.view",
   AI_INTELLIGENCE_MANAGE: "ai_intelligence.manage",
+  SIMULATION_MANAGE: "simulation.manage",
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];

@@ -30,3 +30,18 @@ export const webhookRateLimiter = rateLimit({
   keyGenerator: (req) => `${req.params.channelAccountId ?? req.params.integrationId ?? req.ip}`,
   message: { error: { code: "RATE_LIMITED", message: "too many webhook deliveries", details: {} } },
 });
+
+// Public, unauthenticated simulation endpoints (modules/simulation) — the
+// token in the URL is the only credential, and every message triggers a
+// real LLM call, so this is keyed per-token (a leaked/abused link is
+// capped independently of how many other links or IPs are also in use)
+// on top of the general apiRateLimiter that already applies to all of
+// /v1 by IP.
+export const simulationRateLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `${req.params.token ?? req.ip}`,
+  message: { error: { code: "RATE_LIMITED", message: "عدد كبير جدًا من الرسائل التجريبية، حاول لاحقًا", details: {} } },
+});

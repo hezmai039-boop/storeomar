@@ -8,6 +8,8 @@ import { InboxPage } from "./pages/InboxPage";
 import { KnowledgePage } from "./pages/KnowledgePage";
 import { TicketsPage } from "./pages/TicketsPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { SimulationPage } from "./pages/SimulationPage";
+import { SimulatePage } from "./pages/SimulatePage";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { me, loading } = useAuth();
@@ -25,6 +27,7 @@ function Shell() {
           <Route path="/overview" element={<OverviewPage />} />
           <Route path="/inbox" element={<InboxPage />} />
           <Route path="/knowledge" element={<KnowledgePage />} />
+          <Route path="/simulation" element={<SimulationPage />} />
           <Route path="/tickets" element={<TicketsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to={me?.isOwner ? "/overview" : "/inbox"} replace />} />
@@ -39,6 +42,7 @@ export function App() {
     <AuthProvider>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/simulate/:token" element={<SimulatePage />} />
         <Route
           path="/*"
           element={
