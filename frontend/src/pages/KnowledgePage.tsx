@@ -34,7 +34,7 @@ export function KnowledgePage() {
       .get<{ data: KnowledgeSuggestion[] }>(`/v1/stores/${activeStore.id}/knowledge/suggestions?status=pending_review`)
       .then((resp) => setSuggestions(resp.data));
     api
-      .get<{ data: KnowledgeSource[] }>(`/v1/stores/${activeStore.id}/knowledge/sources`)
+      .get<{ data: KnowledgeSource[] }>(`/v1/stores/${activeStore.id}/knowledge/sources?status=active`)
       .then((resp) => setSources(resp.data));
   }, [activeStore]);
 
@@ -44,6 +44,12 @@ export function KnowledgePage() {
 
   async function decide(id: string, action: "approve" | "reject") {
     await api.post(`/v1/stores/${activeStore!.id}/knowledge/suggestions/${id}/${action}`);
+    reload();
+  }
+
+  async function deleteSource(id: string, title: string) {
+    if (!window.confirm(`حذف "${title}"؟ سيتوقف الذكاء الاصطناعي عن استخدام هذا المحتوى فورًا.`)) return;
+    await api.delete(`/v1/stores/${activeStore!.id}/knowledge/sources/${id}`);
     reload();
   }
 
@@ -205,7 +211,7 @@ export function KnowledgePage() {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                {["المصدر", "النوع", "عدد المقاطع", "الحالة"].map((h) => (
+                {["المصدر", "النوع", "عدد المقاطع", "الحالة", ""].map((h) => (
                   <th key={h} style={{ textAlign: "right", fontSize: 11.5, color: "var(--text-faint)", padding: "10px 14px", borderBottom: "1px solid var(--border)" }}>
                     {h}
                   </th>
@@ -222,6 +228,11 @@ export function KnowledgePage() {
                   </td>
                   <td style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)", fontSize: 13 }}>
                     <span className="badge badge-good">{s.status}</span>
+                  </td>
+                  <td style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)", fontSize: 13, textAlign: "left" }}>
+                    <button className="btn btn-danger btn-sm" onClick={() => deleteSource(s.id, s.title)}>
+                      حذف
+                    </button>
                   </td>
                 </tr>
               ))}

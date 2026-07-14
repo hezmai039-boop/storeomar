@@ -20,9 +20,20 @@ knowledgeRouter.use(authenticate, requireStoreAccess());
 // not media; we extract text immediately and only then write to disk.
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-function chunkText(raw: string): string[] {
+// Splits on blank-line paragraph breaks, and on sentence-ending
+// punctuation *within* a line — but deliberately NOT across a single line
+// break. That distinction matters for the common "س: سؤال؟\nج: جواب"
+// knowledge-entry shape: the "؟" ending the question sits right before a
+// single newline, and the old `\s+` (which also matches newlines) split
+// the question into its own chunk, orphaned from its answer — a real
+// store's AI ended up literally echoing the customer's own question back
+// as the "answer" it retrieved. Restricting the post-punctuation split to
+// horizontal whitespace keeps a question and its answer in one chunk,
+// while still splitting genuinely separate sentences typed on the same
+// line, and paragraphs still split on blank lines as before.
+export function chunkText(raw: string): string[] {
   return raw
-    .split(/\n{2,}|(?<=[.!؟])\s+/)
+    .split(/\n{2,}|(?<=[.!؟])[ \t]+/)
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
 }
@@ -45,16 +56,21 @@ const createSourceSchema = z.object({
   rawText: z.string().min(1).optional(),
 });
 
-// GET /v1/stores/:storeId/knowledge/sources
+// GET /v1/stores/:storeId/knowledge/sources — defaults to hiding archived
+// (soft-deleted) sources so a deleted entry actually disappears from the
+// list instead of lingering with a stale badge; pass ?status=all to see
+// everything, or ?status=<value> for an exact match.
 knowledgeRouter.get(
   "/sources",
   requirePermission(PERMISSIONS.KNOWLEDGE_VIEW),
   asyncHandler(async (req, res) => {
     const cursor = decodeCursor(req.query.cursor as string | undefined);
     const limit = Number(req.query.limit ?? 20);
+    const statusQuery = req.query.status as string | undefined;
+    const statusFilter = statusQuery === "all" ? {} : statusQuery ? { status: statusQuery } : { status: { not: "archived" } };
     const rows = await withStoreContext(req.storeAccess!.accessibleStoreIds, (tx) =>
       tx.knowledgeSource.findMany({
-        where: { storeId: req.storeAccess!.storeId },
+        where: { storeId: req.storeAccess!.storeId, ...statusFilter },
         include: { _count: { select: { chunks: true } } },
         orderBy: { id: "asc" },
         take: limit + 1,
