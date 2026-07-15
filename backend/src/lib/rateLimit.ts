@@ -33,15 +33,25 @@ export const webhookRateLimiter = rateLimit({
 
 // Public, unauthenticated simulation endpoints (modules/simulation) — the
 // token in the URL is the only credential, and every message triggers a
-// real LLM call, so this is keyed per-token (a leaked/abused link is
-// capped independently of how many other links or IPs are also in use)
-// on top of the general apiRateLimiter that already applies to all of
-// /v1 by IP.
+// real LLM call, so this is keyed per-token *and* per-visitor: a store
+// owner is expected to hand the same link to several real people to test
+// at once (docs/19-simulation-links.md), and keying by token alone made
+// them all share one 60-req/5min budget — one person's testing session
+// could exhaust it and lock everyone else out of a perfectly valid link.
+// Keying by token+visitor still bounds the cost of any single simulated
+// conversation, while different visitors of the same link no longer
+// collide. Falls back to token+IP before a visitorId exists (first GET
+// that resolves the link, or a brand-new visitor's first message) — on
+// top of the general apiRateLimiter that already applies to all of /v1 by IP.
 export const simulationRateLimiter = rateLimit({
   windowMs: 5 * 60 * 1000,
   limit: 60,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => `${req.params.token ?? req.ip}`,
+  keyGenerator: (req) => {
+    const token = req.params.token ?? "unknown";
+    const visitorId = (req.body as { visitorId?: string } | undefined)?.visitorId ?? (req.query.visitorId as string | undefined);
+    return `${token}:${visitorId ?? req.ip}`;
+  },
   message: { error: { code: "RATE_LIMITED", message: "عدد كبير جدًا من الرسائل التجريبية، حاول لاحقًا", details: {} } },
 });

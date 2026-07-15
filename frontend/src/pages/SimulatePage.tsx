@@ -20,7 +20,13 @@ function timeLabel(iso: string) {
 export function SimulatePage() {
   const { token } = useParams<{ token: string }>();
   const [linkInfo, setLinkInfo] = useState<{ storeName: string; label: string } | null>(null);
-  const [invalid, setInvalid] = useState(false);
+  // "invalid" (404 — the link genuinely doesn't exist/was disabled) is a
+  // dead end. "retryable" (rate-limited, cold-start network hiccup, 5xx)
+  // is temporary and gets a "try again" button instead — collapsing both
+  // into one permanent "invalid link" screen (the old behavior) misled a
+  // tester into thinking a perfectly valid link was broken when the real
+  // cause was e.g. the shared token rate limit or the backend waking up.
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "invalid" | "retryable">("loading");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -30,10 +36,12 @@ export function SimulatePage() {
   // browser's visitorId (if this token was already chatted with before).
   useEffect(() => {
     if (!token) return;
+    setLoadState("loading");
     api
       .get<{ data: { storeName: string; label: string } }>(`/v1/public/simulate/${token}`)
       .then((resp) => {
         setLinkInfo(resp.data);
+        setLoadState("ready");
         const visitorId = localStorage.getItem(visitorKey(token));
         if (visitorId) {
           api
@@ -42,14 +50,14 @@ export function SimulatePage() {
             .catch(() => {});
         }
       })
-      .catch(() => setInvalid(true));
+      .catch((err) => setLoadState(err instanceof ApiClientError && err.status === 404 ? "invalid" : "retryable"));
   }, [token]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, sending]);
 
-  if (invalid) {
+  if (loadState === "invalid") {
     return (
       <div className="sim-invalid">
         <div style={{ fontSize: 40 }}>⚠</div>
@@ -57,6 +65,23 @@ export function SimulatePage() {
         <span style={{ opacity: 0.8, fontSize: 13 }}>تواصل مع صاحب المتجر للحصول على رابط محاكاة جديد.</span>
       </div>
     );
+  }
+
+  if (loadState === "retryable") {
+    return (
+      <div className="sim-invalid">
+        <div style={{ fontSize: 40 }}>⏳</div>
+        <b>تعذّر الاتصال مؤقتًا</b>
+        <span style={{ opacity: 0.8, fontSize: 13 }}>قد يكون الخادم مشغولًا أو بدأ للتو — حاول مجددًا خلال لحظات.</span>
+        <button className="btn btn-primary btn-sm" style={{ marginTop: 12 }} onClick={() => location.reload()}>
+          إعادة المحاولة
+        </button>
+      </div>
+    );
+  }
+
+  if (loadState === "loading") {
+    return <div className="sim-invalid" style={{ opacity: 0.7 }}>جارٍ التحميل…</div>;
   }
 
   async function send(e: FormEvent) {
