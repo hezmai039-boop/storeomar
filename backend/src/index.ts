@@ -35,6 +35,19 @@ app.use("/v1/auth/login", authRateLimiter);
 
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
 
+// Mounted before identityRouter/tenancyRouter/auditRouter on purpose:
+// those three call `.use(authenticate)` unconditionally inside themselves,
+// and since they're mounted at the bare "/v1" prefix, that blanket
+// authenticate would otherwise run for ANY "/v1/*" request — including
+// this genuinely public, tokenless route — before Express ever gets to
+// check whether one of their own routes actually matches. A request here
+// now gets fully handled by simulationPublicRouter first, so it never
+// reaches that unrelated auth check. (Real-world symptom this fixed: the
+// simulation link worked only in the browser tab that still had a valid
+// admin login token, and 401'd for every other visitor — including the
+// store owner's own session once that token expired.)
+app.use("/v1/public/simulate", simulationPublicRouter);
+
 app.use("/v1", identityRouter);
 app.use("/v1", tenancyRouter);
 app.use("/v1/stores/:storeId", channelsRouter);
@@ -43,7 +56,6 @@ app.use("/v1/stores/:storeId", ticketsRouter);
 app.use("/v1/stores/:storeId", integrationsRouter);
 app.use("/v1/stores/:storeId/ai-intelligence", aiIntelligenceRouter);
 app.use("/v1/stores/:storeId/simulation-links", simulationRouter);
-app.use("/v1/public/simulate", simulationPublicRouter);
 app.use("/v1", analyticsRouter);
 app.use("/v1", auditRouter);
 
