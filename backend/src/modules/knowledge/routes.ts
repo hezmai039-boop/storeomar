@@ -289,6 +289,7 @@ const updateAgentSchema = z.object({
   persona: z.record(z.unknown()).optional(),
   confidenceThresholdHigh: z.number().min(0).max(1).optional(),
   confidenceThresholdLow: z.number().min(0).max(1).optional(),
+  advancedIntelligenceEnabled: z.boolean().optional(),
 });
 
 // PATCH /v1/stores/:storeId/ai-agent

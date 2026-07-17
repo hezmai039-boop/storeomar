@@ -3,7 +3,7 @@ import { resolverPrisma } from "../../db/resolverClient";
 import { withStoreContext } from "../../db/withStoreContext";
 import { asyncHandler } from "../../lib/asyncHandler";
 import { getAdapter } from "./adapters/registry";
-import { gatherAiContext, completeAiPipeline } from "../knowledge/aiPipeline";
+import { gatherAiReply, completeAiReply } from "../knowledge/aiRouter";
 import { createTicketFromConversation } from "../tickets/service";
 import { publish } from "./realtime";
 import { decryptSecret } from "../../lib/crypto";
@@ -112,14 +112,23 @@ webhooksRouter.post(
       publish(account.storeId, { type: "message.created", conversationId: conversation.id, messageId: inboundMsgId });
 
       // Phase 2 (short transaction, DB reads only): gather retrieval + agent
-      // config for the confidence gate.
+      // config for the confidence gate — or the AI Intelligence Layer's
+      // specialists/tools instead, if this store opted into that (see
+      // aiRouter.ts).
       const context = await withStoreContext([account.storeId], (tx) =>
-        gatherAiContext(tx, { storeId: account.storeId, question: inbound.text })
+        gatherAiReply(tx, {
+          storeId: account.storeId,
+          storeName: account.store.name,
+          question: inbound.text,
+          conversationId: conversation.id,
+          customerId: customer.id,
+          organizationId: account.store.organizationId,
+        })
       );
 
-      // Phase 3 (network, no transaction open): the LLM call, if retrieval
-      // was confident enough to attempt one.
-      const result = await completeAiPipeline(context, { storeName: account.store.name, question: inbound.text });
+      // Phase 3 (network, no transaction open): the LLM call(s), if
+      // retrieval/classification was confident enough to attempt one.
+      const result = await completeAiReply(context, { storeName: account.store.name, question: inbound.text });
 
       // Phase 4 (short transaction): persist the AI pipeline's outcome.
       const persisted = await withStoreContext([account.storeId], async (tx) => {

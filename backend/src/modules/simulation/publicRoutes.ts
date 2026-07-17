@@ -4,7 +4,7 @@ import { z } from "zod";
 import { withStoreContext } from "../../db/withStoreContext";
 import { asyncHandler } from "../../lib/asyncHandler";
 import { simulationRateLimiter } from "../../lib/rateLimit";
-import { gatherAiContext, completeAiPipeline } from "../knowledge/aiPipeline";
+import { gatherAiReply, completeAiReply } from "../knowledge/aiRouter";
 import { createTicketFromConversation } from "../tickets/service";
 import { publish } from "../channels/realtime";
 import { resolveSimulationLink, ensureSimulationChannelAccount } from "./service";
@@ -12,9 +12,10 @@ import { resolveSimulationLink, ensureSimulationChannelAccount } from "./service
 // Fully public — no authenticate/requireStoreAccess. The token in the URL
 // is the only credential (see resolveSimulationLink). This mirrors
 // modules/channels/webhook.ts's shape deliberately: same DB/network phase
-// split, same aiPipeline.ts call, so a store owner testing here sees
-// EXACTLY what a real inbound WhatsApp message would produce today — no
-// separate, possibly-drifted "demo" logic path.
+// split, same aiRouter.ts call (classic confidence gate, or the AI
+// Intelligence Layer if this store opted in), so a store owner testing
+// here sees EXACTLY what a real inbound WhatsApp message would produce
+// today — no separate, possibly-drifted "demo" logic path.
 export const simulationPublicRouter = Router();
 
 // GET /v1/public/simulate/:token — resolve the link before the chat UI
@@ -98,15 +99,23 @@ simulationPublicRouter.post(
     publish(resolved.storeId, { type: "message.created", conversationId: conversation.id, messageId: inboundMsgId });
 
     // Phase 2 (short transaction, DB reads only): identical call to
-    // webhook.ts's Phase 2 — the same confidence gate, same knowledge
-    // base, same agent persona/thresholds a real message would use.
+    // webhook.ts's Phase 2 — same engine (classic confidence gate, or the
+    // AI Intelligence Layer if this store opted in), same knowledge base,
+    // same agent persona/thresholds a real message would use.
     const context = await withStoreContext([resolved.storeId], (tx) =>
-      gatherAiContext(tx, { storeId: resolved.storeId, question: body.text })
+      gatherAiReply(tx, {
+        storeId: resolved.storeId,
+        storeName: resolved.storeName,
+        question: body.text,
+        conversationId: conversation.id,
+        customerId: customer.id,
+        organizationId: resolved.organizationId,
+      })
     );
 
     // Phase 3 (network, no transaction open): identical call to
     // webhook.ts's Phase 3.
-    const result = await completeAiPipeline(context, { storeName: resolved.storeName, question: body.text });
+    const result = await completeAiReply(context, { storeName: resolved.storeName, question: body.text });
 
     // Phase 4 (short transaction): persist the outcome — identical to
     // webhook.ts's Phase 4, including real ticket escalation, so a

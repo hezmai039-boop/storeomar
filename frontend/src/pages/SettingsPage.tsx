@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { api, ApiClientError } from "../api/client";
-import type { ChannelAccount, Integration } from "../api/types";
+import type { AiAgent, ChannelAccount, Integration } from "../api/types";
 import { useStore } from "../context/StoreContext";
 import { useAuth } from "../context/AuthContext";
 import { BrandTile } from "../components/BrandIcons";
@@ -121,10 +121,15 @@ export function SettingsPage() {
   const [platformSubmitting, setPlatformSubmitting] = useState(false);
   const [platformError, setPlatformError] = useState<string | null>(null);
 
+  const [agent, setAgent] = useState<AiAgent | null>(null);
+  const [togglingAdvanced, setTogglingAdvanced] = useState(false);
+  const [advancedError, setAdvancedError] = useState<string | null>(null);
+
   const reload = useCallback(() => {
     if (!activeStore) return;
     api.get<{ data: ChannelAccount[] }>(`/v1/stores/${activeStore.id}/channel-accounts`).then((r) => setChannels(r.data));
     api.get<{ data: Integration[] }>(`/v1/stores/${activeStore.id}/integrations`).then((r) => setIntegrations(r.data));
+    api.get<{ data: AiAgent }>(`/v1/stores/${activeStore.id}/knowledge/ai-agent`).then((r) => setAgent(r.data));
   }, [activeStore]);
 
   useEffect(() => reload(), [reload]);
@@ -159,6 +164,23 @@ export function SettingsPage() {
       setChannelError(err instanceof ApiClientError ? err.message : "تعذّر ربط القناة");
     } finally {
       setChannelSubmitting(false);
+    }
+  }
+
+  async function toggleAdvancedIntelligence() {
+    if (!activeStore || !agent) return;
+    const next = !agent.advancedIntelligenceEnabled;
+    setAdvancedError(null);
+    setTogglingAdvanced(true);
+    try {
+      const resp = await api.patch<{ data: AiAgent }>(`/v1/stores/${activeStore.id}/knowledge/ai-agent`, {
+        advancedIntelligenceEnabled: next,
+      });
+      setAgent(resp.data);
+    } catch (err) {
+      setAdvancedError(err instanceof ApiClientError ? err.message : "تعذّر تغيير الإعداد");
+    } finally {
+      setTogglingAdvanced(false);
     }
   }
 
@@ -297,6 +319,42 @@ export function SettingsPage() {
             </button>
           </div>
         </form>
+      </section>
+
+      <section style={{ marginBottom: 32 }}>
+        <h2 style={{ fontSize: 15, margin: "0 0 4px" }}>طبقة الذكاء الاصطناعي المتقدمة</h2>
+        <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>
+          تتيح للذكاء الاصطناعي الاستعلام المباشر عن المنتجات والمخزون وحالة الطلبات الحقيقية، بدل الاعتماد فقط على
+          نص قاعدة المعرفة. <b style={{ color: "var(--text)" }}>تنبيه:</b> تفعيلها يرفع تكلفة كل رسالة عميل فعليًا
+          (استدعاءات إضافية على نفس اشتراك الذكاء الاصطناعي) — مطفأة افتراضيًا لكل المتاجر ولا تُفعَّل إلا بضغطة هذا
+          الزر.
+        </p>
+        <div
+          className="card"
+          style={{ padding: 20, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}
+        >
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 4 }}>
+              الحالة:{" "}
+              <span className={`badge ${agent?.advancedIntelligenceEnabled ? "badge-good" : "badge-neutral"}`}>
+                {agent?.advancedIntelligenceEnabled ? "مفعّلة" : "غير مفعّلة (الوضع الافتراضي الأرخص)"}
+              </span>
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+              {agent?.advancedIntelligenceEnabled
+                ? "المحادثات الحقيقية والمحاكاة تستخدم الآن البحث الحي في المنتجات والطلبات."
+                : "المحادثات تستخدم قاعدة المعرفة النصية فقط، بأقل تكلفة ممكنة."}
+            </div>
+          </div>
+          <button
+            className={`btn btn-sm ${agent?.advancedIntelligenceEnabled ? "btn-danger" : "btn-good"}`}
+            onClick={toggleAdvancedIntelligence}
+            disabled={!agent || togglingAdvanced}
+          >
+            {togglingAdvanced ? "جارٍ الحفظ…" : agent?.advancedIntelligenceEnabled ? "إيقاف" : "تفعيل"}
+          </button>
+        </div>
+        {advancedError && <div style={{ color: "var(--critical)", fontSize: 13, marginTop: 8 }}>{advancedError}</div>}
       </section>
 
       <section>

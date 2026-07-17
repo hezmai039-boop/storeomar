@@ -99,6 +99,15 @@ export interface PageMeta {
   has_more: boolean;
 }
 
+export interface AiAgent {
+  id: string;
+  name: string;
+  confidenceThresholdHigh: string;
+  confidenceThresholdLow: string;
+  advancedIntelligenceEnabled: boolean;
+  status: string;
+}
+
 export interface SimulationLink {
   id: string;
   token: string;

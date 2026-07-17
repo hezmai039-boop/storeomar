@@ -330,6 +330,12 @@ model AiAgent {
   modelName               String   @map("model_name")
   confidenceThresholdHigh Decimal  @default(0.85) @map("confidence_threshold_high") @db.Decimal(3, 2)
   confidenceThresholdLow  Decimal  @default(0.5) @map("confidence_threshold_low") @db.Decimal(3, 2)
+  // Opt-in switch for the AI Intelligence Layer (specialists + live tool
+  // calls into products/orders/customers) as the reply engine for real
+  // customer messages, instead of the classic knowledge-base confidence
+  // gate. Defaults to false so no store's per-message AI cost changes
+  // unless a manager explicitly turns this on — see aiRouter.ts.
+  advancedIntelligenceEnabled Boolean @default(false) @map("advanced_intelligence_enabled")
   status                  String   @default("active")
   createdAt               DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt               DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
