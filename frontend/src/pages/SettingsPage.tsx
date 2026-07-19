@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { api, ApiClientError } from "../api/client";
+import { api, ApiClientError, BASE_URL } from "../api/client";
 import type { AiAgent, ChannelAccount, Integration } from "../api/types";
 import { useStore } from "../context/StoreContext";
 import { useAuth } from "../context/AuthContext";
@@ -114,7 +114,7 @@ export function SettingsPage() {
   const [channelCreds, setChannelCreds] = useState<Record<string, string>>({});
   const [channelSubmitting, setChannelSubmitting] = useState(false);
   const [channelError, setChannelError] = useState<string | null>(null);
-  const [lastVerifyToken, setLastVerifyToken] = useState<{ channelId: string; token: string } | null>(null);
+  const [lastVerifyToken, setLastVerifyToken] = useState<{ channelId: string; channelTypeKey: string; token: string } | null>(null);
 
   const [platformKey, setPlatformKey] = useState(PLATFORMS[0].key);
   const [platformCreds, setPlatformCreds] = useState<Record<string, string>>({});
@@ -154,7 +154,7 @@ export function SettingsPage() {
         }
       );
       if (resp.data.webhookVerifyToken) {
-        setLastVerifyToken({ channelId: resp.data.id, token: resp.data.webhookVerifyToken });
+        setLastVerifyToken({ channelId: resp.data.id, channelTypeKey, token: resp.data.webhookVerifyToken });
       }
       setChannelExternalId("");
       setChannelDisplayName("");
@@ -251,12 +251,21 @@ export function SettingsPage() {
 
         {lastVerifyToken && (
           <div className="card atlas-enter" style={{ padding: 16, marginBottom: 18, borderColor: "var(--good)", boxShadow: "0 8px 24px rgba(22,163,74,0.15)" }}>
-            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>
-              رمز التحقق (Verify Token) — انسخه إلى لوحة Meta الآن، لن يُعرض تلقائيًا مرة أخرى
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>
+              أدخل هذين في لوحة Meta (تبويب Configuration → Webhook) الآن — رمز التحقق لن يُعرض تلقائيًا مرة أخرى
             </div>
-            <code className="mono" style={{ fontSize: 12.5, wordBreak: "break-all" }}>
-              {lastVerifyToken.token}
-            </code>
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 11.5, color: "var(--text-faint)", marginBottom: 4 }}>Callback URL</div>
+              <code className="mono" style={{ fontSize: 12.5, wordBreak: "break-all" }}>
+                {BASE_URL}/v1/webhooks/channels/{lastVerifyToken.channelTypeKey}/{lastVerifyToken.channelId}
+              </code>
+            </div>
+            <div>
+              <div style={{ fontSize: 11.5, color: "var(--text-faint)", marginBottom: 4 }}>Verify Token</div>
+              <code className="mono" style={{ fontSize: 12.5, wordBreak: "break-all" }}>
+                {lastVerifyToken.token}
+              </code>
+            </div>
           </div>
         )}
 
