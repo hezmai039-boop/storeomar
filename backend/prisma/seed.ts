@@ -233,36 +233,42 @@ async function main() {
     update: {},
   });
 
-  await prisma.message.createMany({
-    data: [
-      {
-        conversationId: conversation.id,
-        storeId: flagship.id,
-        senderType: "customer",
-        content: "هل يتوفر الفستان الأزرق مقاس L؟",
-      },
-      {
-        conversationId: conversation.id,
-        storeId: flagship.id,
-        senderType: "ai",
-        content: "نعم متوفر حاليًا بمقاس L بسعر ٢٤٩ ريال، ويشمل التوصيل خلال ٢-٤ أيام عمل داخل الرياض.",
-      },
-      {
-        conversationId: conversation.id,
-        storeId: flagship.id,
-        senderType: "customer",
-        content: "تمام، وهل ممكن أرجعه لو ما قاس علي؟",
-      },
-      {
-        conversationId: conversation.id,
-        storeId: flagship.id,
-        senderType: "agent",
-        senderUserId: agent.id,
-        content: "أهلًا سارة، نعم يمكنك الاسترجاع خلال ١٤ يومًا من الاستلام بشرط أن تكون القطعة بحالتها الأصلية.",
-      },
-    ],
-    skipDuplicates: true,
-  });
+  // Fixed ids + upsert, not createMany — Message has no natural unique key
+  // besides its auto-generated id, so skipDuplicates on createMany was a
+  // no-op (nothing ever conflicts) and every seed run kept appending 4 more
+  // copies of this same demo conversation forever. Real problem in
+  // production: docker-entrypoint.sh runs this seed on every deploy, so a
+  // live store would accumulate duplicate fake messages on every redeploy.
+  const demoMessages = [
+    {
+      id: "00000000-0000-0000-0000-0000000000d1",
+      senderType: "customer",
+      content: "هل يتوفر الفستان الأزرق مقاس L؟",
+    },
+    {
+      id: "00000000-0000-0000-0000-0000000000d2",
+      senderType: "ai",
+      content: "نعم متوفر حاليًا بمقاس L بسعر ٢٤٩ ريال، ويشمل التوصيل خلال ٢-٤ أيام عمل داخل الرياض.",
+    },
+    {
+      id: "00000000-0000-0000-0000-0000000000d3",
+      senderType: "customer",
+      content: "تمام، وهل ممكن أرجعه لو ما قاس علي؟",
+    },
+    {
+      id: "00000000-0000-0000-0000-0000000000d4",
+      senderType: "agent",
+      senderUserId: agent.id,
+      content: "أهلًا سارة، نعم يمكنك الاسترجاع خلال ١٤ يومًا من الاستلام بشرط أن تكون القطعة بحالتها الأصلية.",
+    },
+  ];
+  for (const m of demoMessages) {
+    await prisma.message.upsert({
+      where: { id: m.id },
+      create: { ...m, conversationId: conversation.id, storeId: flagship.id },
+      update: {},
+    });
+  }
 
   const knowledgeSource = await prisma.knowledgeSource.upsert({
     where: { id: "00000000-0000-0000-0000-0000000000a1" },
@@ -277,21 +283,25 @@ async function main() {
     },
     update: {},
   });
-  await prisma.knowledgeChunk.createMany({
-    data: [
-      {
-        storeId: flagship.id,
-        sourceId: knowledgeSource.id,
-        content: "سياسة الاسترجاع: يمكن استرجاع أي قطعة خلال 14 يومًا من الاستلام بحالتها الأصلية وبطاقتها مرفقة.",
-      },
-      {
-        storeId: flagship.id,
-        sourceId: knowledgeSource.id,
-        content: "الشحن داخل الرياض يستغرق من يومين إلى أربعة أيام عمل.",
-      },
-    ],
-    skipDuplicates: true,
-  });
+  // Same fixed-id upsert fix as demoMessages above — KnowledgeChunk has no
+  // natural unique key either.
+  const demoChunks = [
+    {
+      id: "00000000-0000-0000-0000-0000000000b1",
+      content: "سياسة الاسترجاع: يمكن استرجاع أي قطعة خلال 14 يومًا من الاستلام بحالتها الأصلية وبطاقتها مرفقة.",
+    },
+    {
+      id: "00000000-0000-0000-0000-0000000000b2",
+      content: "الشحن داخل الرياض يستغرق من يومين إلى أربعة أيام عمل.",
+    },
+  ];
+  for (const c of demoChunks) {
+    await prisma.knowledgeChunk.upsert({
+      where: { id: c.id },
+      create: { ...c, storeId: flagship.id, sourceId: knowledgeSource.id },
+      update: {},
+    });
+  }
 
   await prisma.aiSuggestedKnowledge.upsert({
     where: { id: "00000000-0000-0000-0000-0000000000a2" },
@@ -327,8 +337,16 @@ async function main() {
     },
     update: {},
   });
-  await prisma.ticketEvent.create({
-    data: { ticketId: ticket.id, actorUserId: agent.id, eventType: "created", payload: { source: "conversation" } },
+  await prisma.ticketEvent.upsert({
+    where: { id: "00000000-0000-0000-0000-0000000000e1" },
+    create: {
+      id: "00000000-0000-0000-0000-0000000000e1",
+      ticketId: ticket.id,
+      actorUserId: agent.id,
+      eventType: "created",
+      payload: { source: "conversation" },
+    },
+    update: {},
   });
 
   await prisma.integration.upsert({
