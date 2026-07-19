@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { tokenize } from "../retrieval";
+import { tokenize, isGreeting } from "../retrieval";
 
 function overlapScore(question: string, chunk: string): number {
   const q = tokenize(question);
@@ -47,4 +47,33 @@ test("tokenize still filters stopwords and single-character noise after stemming
   assert.equal(tokens.has("هل"), false);
   assert.equal(tokens.has("من"), false);
   assert.equal(tokens.has("عن"), false);
+});
+
+test("isGreeting: recognizes a pure Arabic greeting", () => {
+  assert.equal(isGreeting("السلام عليكم ورحمة الله وبركاته"), true);
+  assert.equal(isGreeting("صباح الخير"), true);
+  assert.equal(isGreeting("مساء النور"), true);
+  assert.equal(isGreeting("اهلا وسهلا"), true);
+});
+
+test("isGreeting: recognizes a pure English greeting", () => {
+  assert.equal(isGreeting("hi"), true);
+  assert.equal(isGreeting("hello there"), false); // "there" isn't a known greeting stem — deliberately conservative
+  assert.equal(isGreeting("good morning"), true);
+});
+
+test("isGreeting: a real question that opens with a greeting is never misclassified", () => {
+  assert.equal(isGreeting("مرحبا، وين طلبي؟"), false);
+  assert.equal(isGreeting("السلام عليكم، كم تكلفة الشحن؟"), false);
+});
+
+test("isGreeting: unrelated real questions are false", () => {
+  assert.equal(isGreeting("كم تكلفة الشحن داخل السعودية؟"), false);
+  assert.equal(isGreeting("متى يصل طلبي؟"), false);
+});
+
+test("isGreeting: empty or whitespace-only input is false", () => {
+  assert.equal(isGreeting(""), false);
+  assert.equal(isGreeting("   "), false);
+  assert.equal(isGreeting("؟؟؟"), false);
 });

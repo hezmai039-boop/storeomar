@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import { retrieveBestChunk } from "./retrieval";
+import { retrieveBestChunk, isGreeting } from "./retrieval";
 import { generateGroundedAnswer } from "../../lib/llm";
 
 export type ConfidenceLevel = "high" | "medium" | "low";
@@ -55,6 +55,20 @@ export async function completeAiPipeline(
   context: AiContext,
   params: { storeName: string; question: string }
 ): Promise<AiPipelineResult> {
+  // A bare greeting ("السلام عليكم") has no knowledge-base match by
+  // definition, so it always fell into the low-confidence branch below and
+  // opened a human ticket for a customer who hadn't actually asked
+  // anything yet. Checked first, ahead of the confidence gate, and answered
+  // directly with no LLM call — deterministic and free, matching this
+  // pipeline's "works without an API key" design.
+  if (isGreeting(params.question)) {
+    return {
+      confidenceLevel: "high",
+      replyText: `أهلًا وسهلًا بك في ${params.storeName}! 👋 كيف يمكنني مساعدتك اليوم؟`,
+      createTicket: false,
+    };
+  }
+
   if (context.confidenceLevel === "low" || !context.bestChunkContent) {
     return {
       confidenceLevel: "low",

@@ -58,6 +58,30 @@ export function tokenize(text: string): Set<string> {
   );
 }
 
+// Pure greetings/salutations ("السلام عليكم", "صباح الخير", "hi"...) carry
+// no real question, so they always scored 0 under retrieveBestChunk below
+// and escalated to a human ticket — even though there's nothing for a
+// person to actually resolve. isGreeting recognizes that specific shape
+// (every token in the message, after the same tokenize()/stem() used for
+// retrieval, is a known greeting word) so the pipeline can reply directly
+// instead of opening a ticket. Deliberately conservative: a real question
+// that happens to open with a greeting ("مرحبا، وين طلبي؟") still has
+// content tokens ("وين"/"طلبي") outside this set, so it's never
+// misclassified — only messages made ENTIRELY of greeting words qualify.
+const GREETING_STEMS = new Set([
+  "سلام", "علي", "رحم", "الل", "بركات",
+  "مرحبا", "اهلا", "سهلا", "هلا",
+  "صباح", "مساء", "خير", "نور",
+  "hi", "hii", "hello", "hey", "yo",
+  "good", "morning", "evening",
+]);
+
+export function isGreeting(text: string): boolean {
+  const tokens = tokenize(text);
+  if (tokens.size === 0) return false;
+  return [...tokens].every((t) => GREETING_STEMS.has(t));
+}
+
 export interface RetrievedChunk {
   id: string;
   content: string;
