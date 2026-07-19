@@ -4,6 +4,7 @@ import { instagramAdapter } from "./instagram";
 import { messengerAdapter } from "./messenger";
 import { tiktokAdapter } from "./tiktok";
 import { mockAdapter } from "./mock";
+import { simulationAdapter } from "./simulation";
 
 // Adding a channel = write an adapter + add one line here + insert a
 // channel_types row (see prisma/seed.ts) — nothing else in the codebase
@@ -14,6 +15,7 @@ const adapters: Record<string, ChannelAdapter> = {
   [messengerAdapter.key]: messengerAdapter,
   [tiktokAdapter.key]: tiktokAdapter,
   [mockAdapter.key]: mockAdapter,
+  [simulationAdapter.key]: simulationAdapter,
 };
 
 export function getAdapter(adapterKey: string): ChannelAdapter {
