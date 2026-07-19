@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mapOrchestratorResultToPipelineResult } from "../aiRouter";
+import { mapOrchestratorResultToPipelineResult, completeAiReply } from "../aiRouter";
 import type { OrchestratorResult } from "../../ai-intelligence/orchestrator";
 
 // gatherAiReply's own branch selection is a one-line `if
@@ -51,4 +51,15 @@ test("escalate flag (not just confidence) is what drives createTicket", () => {
   );
   assert.equal(mapped.createTicket, true);
   assert.ok(mapped.escalationReason);
+});
+
+// The store owner's kill switch (Settings → "إيقاف الرد الآلي فورًا"). This
+// is the one branch of completeAiReply that needs no DB/LLM stubbing at
+// all — { mode: "paused" } is a complete, self-sufficient AiReplyContext by
+// construction (gatherAiReply never attaches classic/advanced alongside
+// it), so it's directly testable without a fake Prisma transaction.
+test("paused mode answers nothing and does not escalate — message stays unanswered for a human", async () => {
+  const result = await completeAiReply({ mode: "paused" }, { storeName: "متجر تجريبي", question: "هل يوجد توصيل؟" });
+  assert.equal(result.replyText, null);
+  assert.equal(result.createTicket, false);
 });

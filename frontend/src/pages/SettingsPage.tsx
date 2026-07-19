@@ -124,6 +124,8 @@ export function SettingsPage() {
   const [agent, setAgent] = useState<AiAgent | null>(null);
   const [togglingAdvanced, setTogglingAdvanced] = useState(false);
   const [advancedError, setAdvancedError] = useState<string | null>(null);
+  const [togglingPause, setTogglingPause] = useState(false);
+  const [pauseError, setPauseError] = useState<string | null>(null);
 
   const reload = useCallback(() => {
     if (!activeStore) return;
@@ -181,6 +183,24 @@ export function SettingsPage() {
       setAdvancedError(err instanceof ApiClientError ? err.message : "تعذّر تغيير الإعداد");
     } finally {
       setTogglingAdvanced(false);
+    }
+  }
+
+  async function toggleAiPaused() {
+    if (!activeStore || !agent) return;
+    const next = agent.status === "paused" ? "active" : "paused";
+    if (next === "paused" && !window.confirm("سيتوقف الرد الآلي فورًا لكل قنوات هذا المتجر، وستصل كل الرسائل الجديدة دون رد حتى تُعيد التفعيل أو يرد أحد الموظفين يدويًا. متابعة؟")) {
+      return;
+    }
+    setPauseError(null);
+    setTogglingPause(true);
+    try {
+      const resp = await api.patch<{ data: AiAgent }>(`/v1/stores/${activeStore.id}/knowledge/ai-agent`, { status: next });
+      setAgent(resp.data);
+    } catch (err) {
+      setPauseError(err instanceof ApiClientError ? err.message : "تعذّر تغيير حالة الذكاء الاصطناعي");
+    } finally {
+      setTogglingPause(false);
     }
   }
 
@@ -328,6 +348,50 @@ export function SettingsPage() {
             </button>
           </div>
         </form>
+      </section>
+
+      <section style={{ marginBottom: 32 }}>
+        <h2 style={{ fontSize: 15, margin: "0 0 4px" }}>الرد الآلي بالذكاء الاصطناعي</h2>
+        <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>
+          زر طوارئ خاص بهذا المتجر فقط — لا يؤثر على أي متجر آخر. عند الإيقاف تتوقف كل الردود التلقائية (واتساب،
+          إنستغرام، ماسنجر، تيك توك، والمحاكاة) فورًا، وتبقى كل رسالة جديدة من العميل ظاهرة في صندوق الوارد بلا رد،
+          إلى أن يردّ عليها أحد الموظفين يدويًا من نفس الشاشة، أو تُعاد تفعيل الذكاء الاصطناعي بنفس هذا الزر. مفيد إذا
+          اشتكى عميل من رد أو ظهر خطأ وتريدون التأكد قبل استئناف الردود الآلية.
+        </p>
+        <div
+          className="card"
+          style={{
+            padding: 20,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 16,
+            flexWrap: "wrap",
+            borderColor: agent?.status === "paused" ? "var(--critical)" : undefined,
+          }}
+        >
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 4 }}>
+              الحالة:{" "}
+              <span className={`badge ${agent?.status === "paused" ? "badge-critical" : "badge-good"}`}>
+                {agent?.status === "paused" ? "متوقف — الرد يدوي فقط" : "يعمل تلقائيًا"}
+              </span>
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+              {agent?.status === "paused"
+                ? "الذكاء الاصطناعي متوقف عن الرد لهذا المتجر — الموظفون يردّون يدويًا من صندوق الوارد."
+                : "الذكاء الاصطناعي يرد تلقائيًا على رسائل العملاء الجديدة حسب إعدادات الثقة أدناه."}
+            </div>
+          </div>
+          <button
+            className={`btn btn-sm ${agent?.status === "paused" ? "btn-good" : "btn-danger"}`}
+            onClick={toggleAiPaused}
+            disabled={!agent || togglingPause}
+          >
+            {togglingPause ? "جارٍ الحفظ…" : agent?.status === "paused" ? "إعادة تفعيل الرد الآلي" : "إيقاف الرد الآلي فورًا"}
+          </button>
+        </div>
+        {pauseError && <div style={{ color: "var(--critical)", fontSize: 13, marginTop: 8 }}>{pauseError}</div>}
       </section>
 
       <section style={{ marginBottom: 32 }}>

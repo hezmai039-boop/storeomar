@@ -290,6 +290,11 @@ const updateAgentSchema = z.object({
   confidenceThresholdHigh: z.number().min(0).max(1).optional(),
   confidenceThresholdLow: z.number().min(0).max(1).optional(),
   advancedIntelligenceEnabled: z.boolean().optional(),
+  // The store owner's kill switch — "active" (default) answers messages
+  // automatically as usual; "paused" makes aiRouter.ts skip AI entirely so
+  // every inbound message just sits in the inbox for a human to answer
+  // manually. See the comment on gatherAiReply in aiRouter.ts.
+  status: z.enum(["active", "paused"]).optional(),
 });
 
 // PATCH /v1/stores/:storeId/ai-agent

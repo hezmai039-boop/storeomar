@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
-import type { Conversation, Message } from "../api/types";
+import type { AiAgent, Conversation, Message } from "../api/types";
 import { useStore } from "../context/StoreContext";
 import { BrandTile } from "../components/BrandIcons";
 
@@ -12,6 +12,7 @@ export function InboxPage() {
   const [draft, setDraft] = useState("");
   const [summary, setSummary] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [aiPaused, setAiPaused] = useState(false);
 
   useEffect(() => {
     if (!activeStore) return;
@@ -23,6 +24,10 @@ export function InboxPage() {
         setConversations(resp.data);
         if (resp.data.length > 0) setSelectedId(resp.data[0].id);
       });
+    api
+      .get<{ data: AiAgent }>(`/v1/stores/${activeStore.id}/knowledge/ai-agent`)
+      .then((resp) => setAiPaused(resp.data.status === "paused"))
+      .catch(() => setAiPaused(false));
   }, [activeStore]);
 
   useEffect(() => {
@@ -80,6 +85,24 @@ export function InboxPage() {
         <h1 style={{ fontSize: 22, margin: "0 0 4px" }}>صندوق الوارد الموحد</h1>
         <p style={{ margin: 0, color: "var(--text-dim)", fontSize: 13.5 }}>{activeStore.name}</p>
       </div>
+
+      {aiPaused && (
+        <div
+          className="card atlas-enter"
+          style={{
+            padding: "12px 16px",
+            marginBottom: 16,
+            borderColor: "var(--critical)",
+            background: "var(--critical-tint)",
+            color: "var(--critical)",
+            fontSize: 13,
+            fontWeight: 600,
+          }}
+        >
+          الذكاء الاصطناعي متوقف عن الرد لهذا المتجر — كل الرسائل الجديدة تحتاج ردًا يدويًا. لإعادة التفعيل: الإعدادات
+          ← "الرد الآلي بالذكاء الاصطناعي".
+        </div>
+      )}
 
       <div
         className="card card-glass atlas-enter"

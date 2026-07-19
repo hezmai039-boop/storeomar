@@ -16,7 +16,7 @@ export function mapOrchestratorResultToPipelineResult(result: OrchestratorResult
 }
 
 export interface AiReplyContext {
-  mode: "classic" | "advanced";
+  mode: "classic" | "advanced" | "paused";
   classic?: AiContext;
   advanced?: OrchestratorContext;
 }
@@ -43,9 +43,23 @@ export interface GatherAiReplyParams {
  * answer, i.e. real additional Anthropic API cost per message. A store
  * that never opts in sees zero behavior or cost change from this router
  * existing at all.
+ *
+ * agent.status === "paused" is the store owner's kill switch (Settings →
+ * "إيقاف الذكاء الاصطناعي"): checked first, before either engine touches
+ * retrieval or the DB any further, so a paused store makes zero AI-related
+ * queries and zero LLM calls per message — every inbound message just
+ * lands in the inbox unanswered for staff to reply to manually through the
+ * normal conversation screen, exactly like a channel that was never wired
+ * to AI at all. Re-enabling flips agent.status back to "active" and the
+ * very next message is answered automatically again — no redeploy, no
+ * reconnecting channels.
  */
 export async function gatherAiReply(tx: Prisma.TransactionClient, params: GatherAiReplyParams): Promise<AiReplyContext> {
   const agent = await tx.aiAgent.findUnique({ where: { storeId: params.storeId } });
+
+  if (agent?.status === "paused") {
+    return { mode: "paused" };
+  }
 
   if (agent?.advancedIntelligenceEnabled) {
     const advanced = await gatherOrchestratorContext(tx, {
@@ -73,6 +87,14 @@ export async function completeAiReply(
   context: AiReplyContext,
   params: { storeName: string; question: string }
 ): Promise<AiPipelineResult> {
+  if (context.mode === "paused") {
+    // No replyText → webhook.ts/publicRoutes.ts persist no AI message.
+    // createTicket: false → no auto-escalation ticket either; the
+    // inbound message they already persisted in Phase 1 is all that
+    // happens, sitting in the inbox like any unanswered conversation.
+    return { confidenceLevel: "low", replyText: null, createTicket: false };
+  }
+
   if (context.mode === "advanced" && context.advanced) {
     const result = await completeOrchestratorRun(context.advanced);
     return mapOrchestratorResultToPipelineResult(result);
