@@ -7,7 +7,7 @@ import { simulationRateLimiter } from "../../lib/rateLimit";
 import { gatherAiReply, completeAiReply } from "../knowledge/aiRouter";
 import { createTicketFromConversation } from "../tickets/service";
 import { publish } from "../channels/realtime";
-import { resolveSimulationLink, ensureSimulationChannelAccount } from "./service";
+import { resolveSimulationLink, ensureSimulationChannelAccount, withConflictRetry } from "./service";
 
 // Fully public — no authenticate/requireStoreAccess. The token in the URL
 // is the only credential (see resolveSimulationLink). This mirrors
@@ -56,7 +56,8 @@ simulationPublicRouter.post(
     // shape as webhook.ts Phase 1, using upsert on the same unique key
     // (storeId, channelAccountId, externalId) so a returning visitor
     // resumes their one conversation instead of forking a new one.
-    const { customer, conversation, inboundMsgId } = await withStoreContext([resolved.storeId], async (tx) => {
+    const { customer, conversation, inboundMsgId } = await withConflictRetry(() =>
+      withStoreContext([resolved.storeId], async (tx) => {
       const account = await ensureSimulationChannelAccount(tx, resolved.storeId);
 
       const customer = await tx.customer.upsert({
@@ -95,7 +96,8 @@ simulationPublicRouter.post(
       });
       await tx.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: new Date() } });
       return { customer, conversation, inboundMsgId: inboundMsg.id };
-    });
+      })
+    );
     publish(resolved.storeId, { type: "message.created", conversationId: conversation.id, messageId: inboundMsgId });
 
     // Phase 2 (short transaction, DB reads only): identical call to
@@ -202,18 +204,20 @@ simulationPublicRouter.get(
 
     const query = historyQuerySchema.parse(req.query);
 
-    const messages = await withStoreContext([resolved.storeId], async (tx) => {
-      const account = await ensureSimulationChannelAccount(tx, resolved.storeId);
-      const customer = await tx.customer.findFirst({
-        where: { storeId: resolved.storeId, channelAccountId: account.id, externalId: query.visitorId },
-      });
-      if (!customer) return [];
-      return tx.message.findMany({
-        where: { storeId: resolved.storeId, conversation: { customerId: customer.id } },
-        orderBy: { createdAt: "asc" },
-        select: { senderType: true, content: true, createdAt: true },
-      });
-    });
+    const messages = await withConflictRetry(() =>
+      withStoreContext([resolved.storeId], async (tx) => {
+        const account = await ensureSimulationChannelAccount(tx, resolved.storeId);
+        const customer = await tx.customer.findFirst({
+          where: { storeId: resolved.storeId, channelAccountId: account.id, externalId: query.visitorId },
+        });
+        if (!customer) return [];
+        return tx.message.findMany({
+          where: { storeId: resolved.storeId, conversation: { customerId: customer.id } },
+          orderBy: { createdAt: "asc" },
+          select: { senderType: true, content: true, createdAt: true },
+        });
+      })
+    );
 
     res.json({ data: messages });
   })

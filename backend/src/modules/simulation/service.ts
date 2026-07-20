@@ -28,59 +28,74 @@ export function generateSimulationToken(): string {
 // channel_types.key is globally unique and this row is shared across every
 // store — the first-ever simulation request store-wide (not just per
 // store) can race with another concurrent first request. Same shape for
-// the per-store channel_account row underneath it. Both creates are
-// wrapped to fall back to a re-fetch on a unique-constraint conflict
-// (Prisma error P2002) instead of surfacing a 500 to a real tester who
-// just happened to be second.
-async function getOrCreate<T>(find: () => Promise<T | null>, create: () => Promise<T>): Promise<T> {
-  const existing = await find();
-  if (existing) return existing;
-  try {
-    return await create();
-  } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-      const retried = await find();
-      if (retried) return retried;
-    }
-    throw err;
-  }
+// the per-store channel_account row underneath it.
+//
+// Previously this did a manual find-then-create-and-catch-P2002 dance
+// inside the caller's transaction — found to be a real bug (not just a
+// theoretical race) under a load test simulating ~3000 concurrent first
+// visitors to a fresh simulation link: many concurrent creates lose the
+// unique-constraint race, and once one INSERT fails inside a Postgres
+// transaction, that transaction is aborted — every subsequent statement on
+// it (including the "retry the find" fallback) fails too, with
+// "current transaction is aborted" (25P02), not the P2002 the code was
+// catching for. The existing unit test didn't catch this because mocking
+// `create` to throw isn't the same as a real aborted Postgres transaction.
+// `upsert` is a single atomic statement (INSERT ... ON CONFLICT) — never
+// two statements racing, so there's nothing for a concurrent request to
+// abort partway through.
+export async function ensureSimulationChannelAccount(tx: Prisma.TransactionClient, storeId: string) {
+  const channelType = await tx.channelType.upsert({
+    where: { key: SIMULATION_CHANNEL_TYPE_KEY },
+    create: {
+      key: SIMULATION_CHANNEL_TYPE_KEY,
+      name: "محاكاة",
+      adapterKey: SIMULATION_CHANNEL_TYPE_KEY,
+      isActive: true,
+    },
+    update: {},
+  });
+
+  const account = await tx.channelAccount.upsert({
+    where: {
+      storeId_channelTypeId_externalAccountId: { storeId, channelTypeId: channelType.id, externalAccountId: storeId },
+    },
+    create: {
+      storeId,
+      channelTypeId: channelType.id,
+      externalAccountId: storeId,
+      displayName: "رابط محاكاة",
+      // channel_accounts.credentials_encrypted is NOT NULL — simulation
+      // has no external credentials at all (it never leaves this
+      // process), so an encrypted empty object satisfies the column
+      // without ever storing plaintext, same convention as every other
+      // channel.
+      credentialsEncrypted: encryptSecret("{}"),
+      status: "connected",
+      connectedAt: new Date(),
+    },
+    update: {},
+  });
+  return account;
 }
 
-export async function ensureSimulationChannelAccount(tx: Prisma.TransactionClient, storeId: string) {
-  const channelType = await getOrCreate(
-    () => tx.channelType.findUnique({ where: { key: SIMULATION_CHANNEL_TYPE_KEY } }),
-    () =>
-      tx.channelType.create({
-        data: {
-          key: SIMULATION_CHANNEL_TYPE_KEY,
-          name: "محاكاة",
-          adapterKey: SIMULATION_CHANNEL_TYPE_KEY,
-          isActive: true,
-        },
-      })
-  );
-
-  const account = await getOrCreate(
-    () => tx.channelAccount.findFirst({ where: { storeId, channelTypeId: channelType.id } }),
-    () =>
-      tx.channelAccount.create({
-        data: {
-          storeId,
-          channelTypeId: channelType.id,
-          externalAccountId: storeId,
-          displayName: "رابط محاكاة",
-          // channel_accounts.credentials_encrypted is NOT NULL — simulation
-          // has no external credentials at all (it never leaves this
-          // process), so an encrypted empty object satisfies the column
-          // without ever storing plaintext, same convention as every other
-          // channel.
-          credentialsEncrypted: encryptSecret("{}"),
-          status: "connected",
-          connectedAt: new Date(),
-        },
-      })
-  );
-  return account;
+// Even Prisma's `upsert` doesn't guarantee it compiles to a single atomic
+// `INSERT ... ON CONFLICT` in every case — a live load test at ~3000
+// concurrent first-ever visitors still produced real P2002s on the shared
+// "simulation" channel_type row. Once one statement in a transaction hits
+// a Postgres error, the whole transaction is poisoned — recovery has to
+// retry the *entire* transaction fresh (so it starts a new one and sees
+// whichever concurrent request already committed the row), not just the
+// one query that failed.
+export async function withConflictRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const retryable = err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
+      if (!retryable || attempt === attempts) throw err;
+    }
+  }
+  throw new Error("unreachable");
 }
 
 export interface ResolvedSimulationLink {
