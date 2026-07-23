@@ -2,9 +2,9 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import "./LandingPage.css";
 
-// The store owner / sales contact the "اطلب متجرك" buttons open. Replace the
-// number (international format, no +) with the real business WhatsApp line.
-const CONTACT_WHATSAPP = "966500000000";
+// The store owner / sales contact the "اطلب متجرك" buttons open — the real
+// business WhatsApp line (international format, no +).
+const CONTACT_WHATSAPP = "966538165467";
 const contactHref = `https://wa.me/${CONTACT_WHATSAPP}?text=${encodeURIComponent("مرحبًا، أرغب في إنشاء متجر على منصة Atlas")}`;
 
 const FEATURES = [
