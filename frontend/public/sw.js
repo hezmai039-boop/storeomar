@@ -1,20 +1,24 @@
 /*
- * Atlas service worker — makes the dashboard installable and resilient on
- * mobile without changing any application behaviour.
+ * Atlas service worker — v2.
  *
- * Design constraints (intentional):
- *  - NEVER cache API or auth traffic. Cached order/conversation data would
- *    be a correctness + privacy hazard on a multi-tenant app. We only cache
- *    the static app shell (HTML/JS/CSS/fonts/icons).
- *  - API calls are excluded two ways: cross-origin requests are skipped
- *    outright, and any same-origin path under /v1 (in case the API is ever
- *    reverse-proxied under the web origin) is skipped too.
- *  - Bump CACHE_VERSION on any shell-caching change so old caches are purged
- *    on activate.
+ * IMPORTANT LESSON (why v2 is deliberately minimal): v1 cached the app shell
+ * ("/" index.html) and served it as a fallback. On a frequently-redeployed
+ * app that is a trap — a cached index.html keeps pointing at hashed asset
+ * filenames (index-XXXX.css / .js) that the next deploy deletes, so the page
+ * renders with its JS but NO CSS (a broken, unstyled shell) until a hard
+ * refresh. v2 fixes that class of bug by NEVER serving a cached HTML shell or
+ * caching hashed build assets. It keeps only what's safe:
+ *   - installability (manifest + icon are precached),
+ *   - a genuine offline fallback page for navigations.
+ * Everything else always goes to the network, so a fresh deploy is picked up
+ * immediately with matching HTML+CSS+JS. Correctness over offline caching —
+ * the right trade-off for an app still shipping daily.
  */
-const CACHE_VERSION = "atlas-shell-v1";
+const CACHE_VERSION = "atlas-static-v2";
 const OFFLINE_URL = "/offline.html";
-const PRECACHE_URLS = ["/", "/offline.html", "/manifest.webmanifest", "/icon.svg"];
+// Only self-contained, rarely-changing files — never the hashed app bundles
+// and never index.html.
+const PRECACHE_URLS = [OFFLINE_URL, "/manifest.webmanifest", "/icon.svg"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -35,45 +39,25 @@ self.addEventListener("activate", (event) => {
 });
 
 function isApiRequest(url) {
-  // Cross-origin (the API on its own host/port) or a same-origin /v1 path.
   return url.origin !== self.location.origin || url.pathname.startsWith("/v1");
 }
 
 self.addEventListener("fetch", (event) => {
   const { request } = event;
-  if (request.method !== "GET") return; // never touch POST/PATCH/DELETE
+  if (request.method !== "GET") return;
   const url = new URL(request.url);
-  if (isApiRequest(url)) return; // let the network handle API/auth as normal
+  if (isApiRequest(url)) return; // API/auth always hit the network untouched
 
-  // Navigations (SPA route loads): network-first, fall back to cached shell,
-  // then the offline page. Keeps content fresh online, usable offline.
+  // Navigations: network-first, and the ONLY fallback is the self-contained
+  // offline page — never a cached index.html (which could reference deleted
+  // assets and render unstyled).
   if (request.mode === "navigate") {
-    event.respondWith(
-      fetch(request)
-        .then((resp) => {
-          const copy = resp.clone();
-          caches.open(CACHE_VERSION).then((cache) => cache.put("/", copy));
-          return resp;
-        })
-        .catch(async () => (await caches.match("/")) ?? (await caches.match(OFFLINE_URL)))
-    );
+    event.respondWith(fetch(request).catch(() => caches.match(OFFLINE_URL)));
     return;
   }
 
-  // Static assets (Vite emits content-hashed, immutable filenames):
-  // stale-while-revalidate — instant from cache, refreshed in the background.
-  event.respondWith(
-    caches.match(request).then((cached) => {
-      const network = fetch(request)
-        .then((resp) => {
-          if (resp && resp.status === 200 && resp.type === "basic") {
-            const copy = resp.clone();
-            caches.open(CACHE_VERSION).then((cache) => cache.put(request, copy));
-          }
-          return resp;
-        })
-        .catch(() => cached);
-      return cached ?? network;
-    })
-  );
+  // Precached static files (icon/manifest) can serve from cache; everything
+  // else — including hashed JS/CSS — goes straight to the network so HTML and
+  // assets always come from the same deploy.
+  event.respondWith(caches.match(request).then((cached) => cached || fetch(request)));
 });
