@@ -18,6 +18,34 @@ export interface AiContext {
 }
 
 /**
+ * The courtesy message a customer receives when the AI isn't confident
+ * enough to answer and the question is escalated to a human. Before this,
+ * a low-confidence question produced TOTAL SILENCE on the customer's side —
+ * the ticket was created for staff, but the customer saw nothing back, a
+ * real satisfaction gap. Now they always get an acknowledgment so they know
+ * their message landed and a human will follow up.
+ *
+ * Configurable per store via the agent persona JSON (no DB migration — the
+ * persona column already exists):
+ *   - persona.escalationAckMessage = "نص مخصص" → custom text
+ *   - persona.escalationAckMessage = ""  (or false) → disabled, stay silent
+ *   - absent → the sensible Arabic default below
+ *
+ * NOTE (analytics): this reply is intentionally NOT counted as a resolution.
+ * An acknowledgment is not an answer — the escalation ticket and its
+ * "escalated_to_human" log are what drive the reported rates, and the ack's
+ * own log row is "flagged_for_review", which the reports deliberately ignore.
+ */
+export function buildEscalationAck(storeName: string, persona?: Prisma.JsonValue): string | null {
+  if (persona && typeof persona === "object" && !Array.isArray(persona)) {
+    const raw = (persona as Record<string, unknown>).escalationAckMessage;
+    if (raw === false || raw === "") return null; // explicitly disabled by the store
+    if (typeof raw === "string" && raw.trim().length > 0) return raw.trim();
+  }
+  return `شكرًا لتواصلك مع ${storeName} 🌿 وصلَنا استفسارك، وسيتابع معك أحد أعضاء فريقنا في أقرب وقت للرد عليك بدقّة.`;
+}
+
+/**
  * DB-only half of the confidence gate (docs/02-architecture.md §4) — reads
  * the agent's thresholds and runs retrieval. Deliberately takes `tx` and
  * does no network I/O, so callers can run this inside a short-lived
@@ -72,7 +100,10 @@ export async function completeAiPipeline(
   if (context.confidenceLevel === "low" || !context.bestChunkContent) {
     return {
       confidenceLevel: "low",
-      replyText: null,
+      // Acknowledge the customer instead of leaving them in silence, while
+      // still opening a human ticket. buildEscalationAck returns null only
+      // if the store has explicitly disabled the ack in its persona.
+      replyText: buildEscalationAck(params.storeName, context.agentPersona),
       createTicket: true,
       escalationReason: "ثقة الذكاء الاصطناعي منخفضة — لا تطابق كافٍ في قاعدة المعرفة",
     };
