@@ -11,6 +11,7 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { SimulationPage } from "./pages/SimulationPage";
 import { SimulatePage } from "./pages/SimulatePage";
 import { OnboardingPage } from "./pages/OnboardingPage";
+import { LandingPage } from "./pages/LandingPage";
 import { InstallBanner } from "./pwa/InstallBanner";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -45,6 +46,11 @@ export function App() {
   return (
     <AuthProvider>
       <Routes>
+        {/* Public marketing landing at the root. React Router ranks the exact
+            "/" above the "/*" authed catch-all, so the dashboard is untouched;
+            logged-out visitors see the landing instead of being bounced to
+            /login. */}
+        <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/simulate/:token" element={<SimulatePage />} />
         <Route
