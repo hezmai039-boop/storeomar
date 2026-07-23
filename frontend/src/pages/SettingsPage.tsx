@@ -116,6 +116,16 @@ export function SettingsPage() {
   const [channelError, setChannelError] = useState<string | null>(null);
   const [lastVerifyToken, setLastVerifyToken] = useState<{ channelId: string; channelTypeKey: string; token: string } | null>(null);
 
+  // Rotating an expired/rotated token in place — keeps the same
+  // channelAccountId (and therefore the same webhook Callback URL already
+  // configured on Meta's side) instead of forcing a delete+recreate, which
+  // would break that URL and require reconfiguring the webhook from scratch.
+  const [updatingChannelId, setUpdatingChannelId] = useState<string | null>(null);
+  const [updateCreds, setUpdateCreds] = useState<Record<string, string>>({});
+  const [updateSubmitting, setUpdateSubmitting] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [updateSuccessId, setUpdateSuccessId] = useState<string | null>(null);
+
   const [platformKey, setPlatformKey] = useState(PLATFORMS[0].key);
   const [platformCreds, setPlatformCreds] = useState<Record<string, string>>({});
   const [platformSubmitting, setPlatformSubmitting] = useState(false);
@@ -166,6 +176,26 @@ export function SettingsPage() {
       setChannelError(err instanceof ApiClientError ? err.message : "تعذّر ربط القناة");
     } finally {
       setChannelSubmitting(false);
+    }
+  }
+
+  async function updateChannelCredentials(e: FormEvent, channel: ChannelAccount) {
+    e.preventDefault();
+    setUpdateError(null);
+    setUpdateSubmitting(true);
+    try {
+      await api.patch(`/v1/stores/${activeStore!.id}/channel-accounts/${channel.id}/credentials`, {
+        credentials: updateCreds,
+      });
+      setUpdatingChannelId(null);
+      setUpdateCreds({});
+      setUpdateSuccessId(channel.id);
+      setTimeout(() => setUpdateSuccessId((cur) => (cur === channel.id ? null : cur)), 4000);
+      reload();
+    } catch (err) {
+      setUpdateError(err instanceof ApiClientError ? err.message : "تعذّر تحديث بيانات الاعتماد");
+    } finally {
+      setUpdateSubmitting(false);
     }
   }
 
@@ -265,6 +295,58 @@ export function SettingsPage() {
                 <span style={{ fontWeight: 700, fontSize: 13.5 }}>{c.displayName}</span>
               </div>
               <span className={`badge ${c.status === "connected" ? "badge-good" : "badge-critical"}`}>{c.status}</span>
+              {c.channelType.key !== "mock" && (
+                <div style={{ marginTop: 10 }}>
+                  {updateSuccessId === c.id && <span className="badge badge-good">تم تحديث البيانات</span>}
+                  {updatingChannelId === c.id ? (
+                    <form
+                      onSubmit={(e) => updateChannelCredentials(e, c)}
+                      style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}
+                    >
+                      {(CHANNEL_TYPES.find((t) => t.key === c.channelType.key)?.fields ?? []).map((f) => (
+                        <label key={f.key} style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11.5 }}>
+                          {f.label} الجديد
+                          <input
+                            type="text"
+                            value={updateCreds[f.key] ?? ""}
+                            onChange={(e) => setUpdateCreds((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                            required
+                          />
+                        </label>
+                      ))}
+                      {updateError && <span style={{ color: "var(--critical)", fontSize: 12 }}>{updateError}</span>}
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button className="btn btn-primary btn-sm" type="submit" disabled={updateSubmitting}>
+                          {updateSubmitting ? "جارٍ الحفظ…" : "حفظ"}
+                        </button>
+                        <button
+                          className="btn btn-sm"
+                          type="button"
+                          onClick={() => {
+                            setUpdatingChannelId(null);
+                            setUpdateCreds({});
+                            setUpdateError(null);
+                          }}
+                        >
+                          إلغاء
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <button
+                      className="btn btn-sm"
+                      type="button"
+                      onClick={() => {
+                        setUpdatingChannelId(c.id);
+                        setUpdateCreds({});
+                        setUpdateError(null);
+                      }}
+                    >
+                      تحديث بيانات الاعتماد (مثلاً بعد انتهاء صلاحية Access Token)
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
