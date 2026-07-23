@@ -29,6 +29,8 @@ webhooksRouter.get(
   asyncHandler(async (req, res) => {
     const account = await resolverPrisma.channelAccount.findUnique({ where: { id: req.params.channelAccountId } });
     const verifyToken = req.query["hub.verify_token"];
+    // TEMPORARY debug logging — remove once WhatsApp inbound delivery is confirmed working.
+    console.log(`[webhook GET] channelAccountId=${req.params.channelAccountId} accountFound=${!!account} tokenMatch=${!!account && verifyToken === account.webhookVerifyToken}`);
     if (account && verifyToken && verifyToken === account.webhookVerifyToken) {
       return res.status(200).send(req.query["hub.challenge"]);
     }
@@ -46,24 +48,33 @@ webhooksRouter.post(
     const { channelTypeKey, channelAccountId } = req.params;
     const rawBody = req.body as Buffer;
 
+    // TEMPORARY debug logging — remove once WhatsApp inbound delivery is confirmed working.
+    console.log(`[webhook POST] channelTypeKey=${channelTypeKey} channelAccountId=${channelAccountId} bodyBytes=${rawBody?.length ?? 0}`);
+
     const account = await resolverPrisma.channelAccount.findUnique({
       where: { id: channelAccountId },
       include: { channelType: true, store: true },
     });
-    if (!account || account.channelType.key !== channelTypeKey) return res.sendStatus(404);
+    if (!account || account.channelType.key !== channelTypeKey) {
+      console.log(`[webhook POST] 404 — accountFound=${!!account} typeMatch=${account?.channelType.key === channelTypeKey}`);
+      return res.sendStatus(404);
+    }
 
     const adapter = getAdapter(account.channelType.adapterKey);
     const signature =
       (req.header("x-hub-signature-256") as string | undefined) ?? (req.header("x-tiktok-signature") as string | undefined);
     const appSecret = APP_SECRETS[channelTypeKey] ?? "";
 
-    if (!adapter.verifyWebhookSignature(rawBody, signature, appSecret)) {
+    const signatureOk = adapter.verifyWebhookSignature(rawBody, signature, appSecret);
+    console.log(`[webhook POST] signatureHeaderPresent=${!!signature} appSecretConfigured=${!!appSecret} signatureOk=${signatureOk}`);
+    if (!signatureOk) {
       // Invalid signature = reject before touching the database (docs/06-api-design.md §3).
       return res.sendStatus(401);
     }
 
     const payload = JSON.parse(rawBody.toString("utf8"));
     const inboundMessages = adapter.parseWebhook(payload);
+    console.log(`[webhook POST] parsedInboundMessages=${inboundMessages.length}`);
 
     for (const inbound of inboundMessages) {
       // Phase 1 (short transaction): persist the inbound message. Committed
