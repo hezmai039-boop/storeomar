@@ -131,6 +131,10 @@ export function SettingsPage() {
   const [platformSubmitting, setPlatformSubmitting] = useState(false);
   const [platformError, setPlatformError] = useState<string | null>(null);
 
+  const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncResult, setSyncResult] = useState<{ id: string; orders: number; products: number } | null>(null);
+
   const [agent, setAgent] = useState<AiAgent | null>(null);
   const [togglingAdvanced, setTogglingAdvanced] = useState(false);
   const [advancedError, setAdvancedError] = useState<string | null>(null);
@@ -251,6 +255,23 @@ export function SettingsPage() {
       setPlatformError(err instanceof ApiClientError ? err.message : "تعذّر ربط المنصة");
     } finally {
       setPlatformSubmitting(false);
+    }
+  }
+
+  async function syncIntegration(integration: Integration) {
+    setSyncingId(integration.id);
+    setSyncError(null);
+    setSyncResult(null);
+    try {
+      const resp = await api.post<{ data: { orders: number; products: number } }>(
+        `/v1/stores/${activeStore!.id}/integrations/${integration.id}/sync`
+      );
+      setSyncResult({ id: integration.id, orders: resp.data.orders, products: resp.data.products });
+      reload();
+    } catch (err) {
+      setSyncError(err instanceof ApiClientError ? err.message : "تعذّرت المزامنة");
+    } finally {
+      setSyncingId(null);
     }
   }
 
@@ -536,8 +557,25 @@ export function SettingsPage() {
                 <span style={{ fontWeight: 700, fontSize: 13.5 }}>{i.platform}</span>
               </div>
               <span className={`badge ${i.status === "connected" ? "badge-good" : "badge-critical"}`}>{i.status}</span>
+              <div style={{ fontSize: 11.5, color: "var(--text-faint)", marginTop: 10 }}>
+                {i.lastSyncedAt ? `آخر مزامنة: ${new Date(i.lastSyncedAt).toLocaleString("ar-SA")}` : "لم تتم المزامنة بعد"}
+              </div>
+              <button
+                className="btn btn-ghost btn-sm"
+                style={{ marginTop: 10, width: "100%" }}
+                disabled={syncingId === i.id}
+                onClick={() => syncIntegration(i)}
+              >
+                {syncingId === i.id ? "جارٍ المزامنة…" : "مزامنة الآن (الطلبات والمنتجات)"}
+              </button>
+              {syncResult?.id === i.id && (
+                <div style={{ fontSize: 11.5, color: "var(--good)", marginTop: 6 }}>
+                  تمت مزامنة {syncResult.orders} طلب و{syncResult.products} منتج.
+                </div>
+              )}
             </div>
           ))}
+          {syncError && <div style={{ color: "var(--critical)", fontSize: 12.5, gridColumn: "1 / -1" }}>{syncError}</div>}
         </div>
 
         <form onSubmit={connectIntegration} className="card" style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
