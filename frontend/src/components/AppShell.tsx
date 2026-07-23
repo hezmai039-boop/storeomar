@@ -118,6 +118,11 @@ export function AppShell() {
                   <span className="ic">◧</span> نظرة عامة
                 </NavLink>
               </li>
+              <li>
+                <NavLink to="/onboarding" className={({ isActive }) => (isActive ? "is-active" : "")}>
+                  <span className="ic">＋</span> إضافة متجر جديد
+                </NavLink>
+              </li>
             </ul>
           </>
         )}

@@ -10,6 +10,7 @@ import { TicketsPage } from "./pages/TicketsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SimulationPage } from "./pages/SimulationPage";
 import { SimulatePage } from "./pages/SimulatePage";
+import { OnboardingPage } from "./pages/OnboardingPage";
 import { InstallBanner } from "./pwa/InstallBanner";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -26,6 +27,7 @@ function Shell() {
       <Routes>
         <Route element={<AppShell />}>
           <Route path="/overview" element={<OverviewPage />} />
+          <Route path="/onboarding" element={<OnboardingPage />} />
           <Route path="/inbox" element={<InboxPage />} />
           <Route path="/knowledge" element={<KnowledgePage />} />
           <Route path="/simulation" element={<SimulationPage />} />

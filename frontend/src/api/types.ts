@@ -6,6 +6,17 @@ export interface StoreSummary {
   roles: string[];
 }
 
+// The full store record returned by store-management endpoints (create,
+// onboard, get). StoreSummary above is the lighter shape /me returns.
+export interface Store {
+  id: string;
+  organizationId: string;
+  name: string;
+  slug: string;
+  currency: string;
+  status: string;
+}
+
 export interface Me {
   id: string;
   name: string;
