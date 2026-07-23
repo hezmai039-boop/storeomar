@@ -1,7 +1,7 @@
 // Prisma schema — mirrors docs/01-database-design.md exactly (table/column
 // names match 1:1 so the design doc stays the single source of truth).
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
   previewFeatures = ["postgresqlExtensions"]
 }
 
@@ -23,10 +23,10 @@ model Organization {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  stores      Store[]
-  users       User[]
-  members     OrganizationMember[]
-  auditLogs   AuditLog[]
+  stores    Store[]
+  users     User[]
+  members   OrganizationMember[]
+  auditLogs AuditLog[]
 
   @@map("organizations")
 }
@@ -43,24 +43,24 @@ model Store {
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization      Organization        @relation(fields: [organizationId], references: [id])
-  userStoreRoles    UserStoreRole[]
-  channelAccounts   ChannelAccount[]
-  customers         Customer[]
-  conversations     Conversation[]
-  messages          Message[]
-  knowledgeSources  KnowledgeSource[]
-  knowledgeChunks   KnowledgeChunk[]
-  aiAgent           AiAgent?
-  aiSuggestions     AiSuggestedKnowledge[]
-  aiResponseLogs    AiResponseLog[]
-  ticketDepartments TicketDepartment[]
-  tickets           Ticket[]
-  integrations      Integration[]
-  syncedOrders      SyncedOrder[]
-  syncedProducts    SyncedProduct[]
-  dailyMetrics      StoreDailyMetric[]
-  auditLogs         AuditLog[]
+  organization           Organization           @relation(fields: [organizationId], references: [id])
+  userStoreRoles         UserStoreRole[]
+  channelAccounts        ChannelAccount[]
+  customers              Customer[]
+  conversations          Conversation[]
+  messages               Message[]
+  knowledgeSources       KnowledgeSource[]
+  knowledgeChunks        KnowledgeChunk[]
+  aiAgent                AiAgent?
+  aiSuggestions          AiSuggestedKnowledge[]
+  aiResponseLogs         AiResponseLog[]
+  ticketDepartments      TicketDepartment[]
+  tickets                Ticket[]
+  integrations           Integration[]
+  syncedOrders           SyncedOrder[]
+  syncedProducts         SyncedProduct[]
+  dailyMetrics           StoreDailyMetric[]
+  auditLogs              AuditLog[]
   aiSpecialists          AiSpecialist[]
   aiToolInvocations      AiToolInvocation[]
   aiOrchestratorRuns     AiOrchestratorRun[]
@@ -88,17 +88,17 @@ model User {
   lastLoginAt    DateTime? @map("last_login_at") @db.Timestamptz(6)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  organization       Organization         @relation(fields: [organizationId], references: [id])
-  organizationRoles  OrganizationMember[]
-  storeRoles         UserStoreRole[]      @relation("UserStoreRoleUser")
-  grantedRoles       UserStoreRole[]      @relation("UserStoreRoleGrantedBy")
-  assignedConversations Conversation[]
-  sentMessages       Message[]
-  createdSources     KnowledgeSource[]
-  reviewedSuggestions AiSuggestedKnowledge[]
-  assignedTickets    Ticket[]
-  ticketEvents       TicketEvent[]
-  auditLogs          AuditLog[]
+  organization           Organization           @relation(fields: [organizationId], references: [id])
+  organizationRoles      OrganizationMember[]
+  storeRoles             UserStoreRole[]        @relation("UserStoreRoleUser")
+  grantedRoles           UserStoreRole[]        @relation("UserStoreRoleGrantedBy")
+  assignedConversations  Conversation[]
+  sentMessages           Message[]
+  createdSources         KnowledgeSource[]
+  reviewedSuggestions    AiSuggestedKnowledge[]
+  assignedTickets        Ticket[]
+  ticketEvents           TicketEvent[]
+  auditLogs              AuditLog[]
   createdSimulationLinks SimulationLink[]
 
   @@map("users")
@@ -164,10 +164,10 @@ model UserStoreRole {
   grantedBy String   @map("granted_by") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  user      User  @relation("UserStoreRoleUser", fields: [userId], references: [id])
-  grantedByUser User @relation("UserStoreRoleGrantedBy", fields: [grantedBy], references: [id])
-  store     Store @relation(fields: [storeId], references: [id])
-  role      Role  @relation(fields: [roleId], references: [id])
+  user          User  @relation("UserStoreRoleUser", fields: [userId], references: [id])
+  grantedByUser User  @relation("UserStoreRoleGrantedBy", fields: [grantedBy], references: [id])
+  store         Store @relation(fields: [storeId], references: [id])
+  role          Role  @relation(fields: [roleId], references: [id])
 
   @@unique([userId, storeId, roleId])
   @@map("user_store_roles")
@@ -190,24 +190,25 @@ model ChannelType {
 }
 
 model ChannelAccount {
-  id                    String    @id @default(uuid()) @db.Uuid
-  storeId               String    @map("store_id") @db.Uuid
-  channelTypeId         String    @map("channel_type_id") @db.Uuid
-  externalAccountId     String    @map("external_account_id")
-  displayName           String    @map("display_name")
-  credentialsEncrypted  Bytes     @map("credentials_encrypted")
-  webhookVerifyToken    String?   @map("webhook_verify_token")
-  status                String    @default("connected")
-  connectedAt           DateTime? @map("connected_at") @db.Timestamptz(6)
-  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt             DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                   String    @id @default(uuid()) @db.Uuid
+  storeId              String    @map("store_id") @db.Uuid
+  channelTypeId        String    @map("channel_type_id") @db.Uuid
+  externalAccountId    String    @map("external_account_id")
+  displayName          String    @map("display_name")
+  credentialsEncrypted Bytes     @map("credentials_encrypted")
+  webhookVerifyToken   String?   @map("webhook_verify_token")
+  status               String    @default("connected")
+  connectedAt          DateTime? @map("connected_at") @db.Timestamptz(6)
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  store       Store         @relation(fields: [storeId], references: [id])
-  channelType ChannelType   @relation(fields: [channelTypeId], references: [id])
-  customers   Customer[]
+  store         Store          @relation(fields: [storeId], references: [id])
+  channelType   ChannelType    @relation(fields: [channelTypeId], references: [id])
+  customers     Customer[]
   conversations Conversation[]
 
   @@unique([storeId, channelTypeId, externalAccountId])
+  @@index([externalAccountId])
   @@map("channel_accounts")
 }
 
@@ -227,11 +228,11 @@ model Customer {
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  store         Store          @relation(fields: [storeId], references: [id])
-  channelAccount ChannelAccount? @relation(fields: [channelAccountId], references: [id])
-  conversations Conversation[]
-  tickets       Ticket[]
-  aiMemories    AiCustomerMemory[]
+  store          Store              @relation(fields: [storeId], references: [id])
+  channelAccount ChannelAccount?    @relation(fields: [channelAccountId], references: [id])
+  conversations  Conversation[]
+  tickets        Ticket[]
+  aiMemories     AiCustomerMemory[]
 
   @@unique([storeId, channelAccountId, externalId])
   @@map("customers")
@@ -249,18 +250,20 @@ model Conversation {
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  store          Store            @relation(fields: [storeId], references: [id])
-  channelAccount ChannelAccount   @relation(fields: [channelAccountId], references: [id])
-  customer       Customer         @relation(fields: [customerId], references: [id])
-  assignedUser   User?            @relation(fields: [assignedUserId], references: [id])
-  messages       Message[]
-  suggestions    AiSuggestedKnowledge[]
-  responseLogs   AiResponseLog[]
-  tickets        Ticket[]
-  aiMemory            AiConversationMemory?
-  aiOrchestratorRuns  AiOrchestratorRun[]
-  aiToolInvocations   AiToolInvocation[]
+  store              Store                  @relation(fields: [storeId], references: [id])
+  channelAccount     ChannelAccount         @relation(fields: [channelAccountId], references: [id])
+  customer           Customer               @relation(fields: [customerId], references: [id])
+  assignedUser       User?                  @relation(fields: [assignedUserId], references: [id])
+  messages           Message[]
+  suggestions        AiSuggestedKnowledge[]
+  responseLogs       AiResponseLog[]
+  tickets            Ticket[]
+  aiMemory           AiConversationMemory?
+  aiOrchestratorRuns AiOrchestratorRun[]
+  aiToolInvocations  AiToolInvocation[]
 
+  @@index([storeId, lastMessageAt])
+  @@index([storeId, customerId, status])
   @@map("conversations")
 }
 
@@ -275,11 +278,13 @@ model Message {
   externalMessageId String?  @map("external_message_id")
   createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  conversation Conversation @relation(fields: [conversationId], references: [id])
-  store        Store        @relation(fields: [storeId], references: [id])
-  senderUser   User?        @relation(fields: [senderUserId], references: [id])
+  conversation Conversation   @relation(fields: [conversationId], references: [id])
+  store        Store          @relation(fields: [storeId], references: [id])
+  senderUser   User?          @relation(fields: [senderUserId], references: [id])
   responseLog  AiResponseLog?
 
+  @@index([conversationId, createdAt])
+  @@index([storeId])
   @@map("messages")
 }
 
@@ -299,46 +304,48 @@ model KnowledgeSource {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  store           Store            @relation(fields: [storeId], references: [id])
-  creator         User             @relation(fields: [createdBy], references: [id])
-  chunks          KnowledgeChunk[]
+  store   Store            @relation(fields: [storeId], references: [id])
+  creator User             @relation(fields: [createdBy], references: [id])
+  chunks  KnowledgeChunk[]
 
+  @@index([storeId, status])
   @@map("knowledge_sources")
 }
 
 model KnowledgeChunk {
-  id        String                  @id @default(uuid()) @db.Uuid
-  storeId   String                  @map("store_id") @db.Uuid
-  sourceId  String                  @map("source_id") @db.Uuid
+  id        String                       @id @default(uuid()) @db.Uuid
+  storeId   String                       @map("store_id") @db.Uuid
+  sourceId  String                       @map("source_id") @db.Uuid
   content   String
   embedding Unsupported("vector(1536)")?
-  metadata  Json                    @default("{}")
-  createdAt DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  metadata  Json                         @default("{}")
+  createdAt DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
 
   store  Store           @relation(fields: [storeId], references: [id])
   source KnowledgeSource @relation(fields: [sourceId], references: [id])
 
+  @@index([storeId])
   @@map("knowledge_chunks")
 }
 
 model AiAgent {
-  id                      String   @id @default(uuid()) @db.Uuid
-  storeId                 String   @unique @map("store_id") @db.Uuid
-  name                    String
-  persona                 Json     @default("{}")
-  modelProvider           String   @map("model_provider")
-  modelName               String   @map("model_name")
-  confidenceThresholdHigh Decimal  @default(0.85) @map("confidence_threshold_high") @db.Decimal(3, 2)
-  confidenceThresholdLow  Decimal  @default(0.5) @map("confidence_threshold_low") @db.Decimal(3, 2)
+  id                          String   @id @default(uuid()) @db.Uuid
+  storeId                     String   @unique @map("store_id") @db.Uuid
+  name                        String
+  persona                     Json     @default("{}")
+  modelProvider               String   @map("model_provider")
+  modelName                   String   @map("model_name")
+  confidenceThresholdHigh     Decimal  @default(0.85) @map("confidence_threshold_high") @db.Decimal(3, 2)
+  confidenceThresholdLow      Decimal  @default(0.5) @map("confidence_threshold_low") @db.Decimal(3, 2)
   // Opt-in switch for the AI Intelligence Layer (specialists + live tool
   // calls into products/orders/customers) as the reply engine for real
   // customer messages, instead of the classic knowledge-base confidence
   // gate. Defaults to false so no store's per-message AI cost changes
   // unless a manager explicitly turns this on — see aiRouter.ts.
-  advancedIntelligenceEnabled Boolean @default(false) @map("advanced_intelligence_enabled")
-  status                  String   @default("active")
-  createdAt               DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt               DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  advancedIntelligenceEnabled Boolean  @default(false) @map("advanced_intelligence_enabled")
+  status                      String   @default("active")
+  createdAt                   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   store Store @relation(fields: [storeId], references: [id])
 
@@ -359,22 +366,24 @@ model AiSuggestedKnowledge {
   conversation Conversation? @relation(fields: [conversationId], references: [id])
   reviewer     User?         @relation(fields: [reviewedBy], references: [id])
 
+  @@index([storeId, status])
   @@map("ai_suggested_knowledge")
 }
 
 model AiResponseLog {
-  id               String   @id @default(uuid()) @db.Uuid
-  storeId          String   @map("store_id") @db.Uuid
-  conversationId   String   @map("conversation_id") @db.Uuid
-  messageId        String?  @unique @map("message_id") @db.Uuid
-  confidenceLevel  String   @map("confidence_level")
-  actionTaken      String   @map("action_taken")
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  id              String   @id @default(uuid()) @db.Uuid
+  storeId         String   @map("store_id") @db.Uuid
+  conversationId  String   @map("conversation_id") @db.Uuid
+  messageId       String?  @unique @map("message_id") @db.Uuid
+  confidenceLevel String   @map("confidence_level")
+  actionTaken     String   @map("action_taken")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   store        Store        @relation(fields: [storeId], references: [id])
   conversation Conversation @relation(fields: [conversationId], references: [id])
   message      Message?     @relation(fields: [messageId], references: [id])
 
+  @@index([storeId, actionTaken, createdAt])
   @@map("ai_response_logs")
 }
 
@@ -395,20 +404,20 @@ model TicketDepartment {
 }
 
 model Ticket {
-  id                String    @id @default(uuid()) @db.Uuid
-  storeId           String    @map("store_id") @db.Uuid
-  conversationId    String    @map("conversation_id") @db.Uuid
-  customerId        String    @map("customer_id") @db.Uuid
-  departmentId      String?   @map("department_id") @db.Uuid
-  assignedUserId    String?   @map("assigned_user_id") @db.Uuid
-  status            String    @default("open")
-  priority          String    @default("medium")
-  escalationReason  String?   @map("escalation_reason")
-  aiRecommendation  String?   @map("ai_recommendation")
-  attachments       Json      @default("[]")
-  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  resolvedAt        DateTime? @map("resolved_at") @db.Timestamptz(6)
+  id               String    @id @default(uuid()) @db.Uuid
+  storeId          String    @map("store_id") @db.Uuid
+  conversationId   String    @map("conversation_id") @db.Uuid
+  customerId       String    @map("customer_id") @db.Uuid
+  departmentId     String?   @map("department_id") @db.Uuid
+  assignedUserId   String?   @map("assigned_user_id") @db.Uuid
+  status           String    @default("open")
+  priority         String    @default("medium")
+  escalationReason String?   @map("escalation_reason")
+  aiRecommendation String?   @map("ai_recommendation")
+  attachments      Json      @default("[]")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  resolvedAt       DateTime? @map("resolved_at") @db.Timestamptz(6)
 
   store        Store             @relation(fields: [storeId], references: [id])
   conversation Conversation      @relation(fields: [conversationId], references: [id])
@@ -417,6 +426,7 @@ model Ticket {
   assignedUser User?             @relation(fields: [assignedUserId], references: [id])
   events       TicketEvent[]
 
+  @@index([storeId, status])
   @@map("tickets")
 }
 
@@ -431,6 +441,7 @@ model TicketEvent {
   ticket    Ticket @relation(fields: [ticketId], references: [id])
   actorUser User?  @relation(fields: [actorUserId], references: [id])
 
+  @@index([ticketId])
   @@map("ticket_events")
 }
 
@@ -471,6 +482,7 @@ model SyncedOrder {
   integration Integration @relation(fields: [integrationId], references: [id])
 
   @@unique([storeId, integrationId, externalOrderId])
+  @@index([storeId, customerRef])
   @@map("synced_orders")
 }
 
@@ -498,16 +510,16 @@ model SyncedProduct {
 // ------------------------------------------------------------------
 
 model StoreDailyMetric {
-  id                       String   @id @default(uuid()) @db.Uuid
-  storeId                  String   @map("store_id") @db.Uuid
-  metricDate               DateTime @map("metric_date") @db.Date
-  totalConversations       Int      @default(0) @map("total_conversations")
-  aiResolvedCount          Int      @default(0) @map("ai_resolved_count")
-  escalatedCount           Int      @default(0) @map("escalated_count")
-  avgFirstResponseSeconds  Int?     @map("avg_first_response_seconds")
-  topQuestions             Json     @default("[]") @map("top_questions")
-  topIssues                Json     @default("[]") @map("top_issues")
-  createdAt                DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  id                      String   @id @default(uuid()) @db.Uuid
+  storeId                 String   @map("store_id") @db.Uuid
+  metricDate              DateTime @map("metric_date") @db.Date
+  totalConversations      Int      @default(0) @map("total_conversations")
+  aiResolvedCount         Int      @default(0) @map("ai_resolved_count")
+  escalatedCount          Int      @default(0) @map("escalated_count")
+  avgFirstResponseSeconds Int?     @map("avg_first_response_seconds")
+  topQuestions            Json     @default("[]") @map("top_questions")
+  topIssues               Json     @default("[]") @map("top_issues")
+  createdAt               DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   store Store @relation(fields: [storeId], references: [id])
 
@@ -532,6 +544,8 @@ model AuditLog {
   store        Store?       @relation(fields: [storeId], references: [id])
   actorUser    User?        @relation(fields: [actorUserId], references: [id])
 
+  @@index([organizationId, createdAt])
+  @@index([storeId])
   @@map("audit_logs")
 }
 
@@ -577,6 +591,7 @@ model AiToolInvocation {
   store        Store         @relation(fields: [storeId], references: [id])
   conversation Conversation? @relation(fields: [conversationId], references: [id])
 
+  @@index([storeId])
   @@map("ai_tool_invocations")
 }
 
@@ -596,6 +611,7 @@ model AiOrchestratorRun {
   store        Store        @relation(fields: [storeId], references: [id])
   conversation Conversation @relation(fields: [conversationId], references: [id])
 
+  @@index([storeId])
   @@map("ai_orchestrator_runs")
 }
 
@@ -663,5 +679,6 @@ model SimulationLink {
   store   Store @relation(fields: [storeId], references: [id])
   creator User  @relation(fields: [createdBy], references: [id])
 
+  @@index([storeId])
   @@map("simulation_links")
 }
