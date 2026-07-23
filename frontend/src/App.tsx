@@ -10,6 +10,7 @@ import { TicketsPage } from "./pages/TicketsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SimulationPage } from "./pages/SimulationPage";
 import { SimulatePage } from "./pages/SimulatePage";
+import { InstallBanner } from "./pwa/InstallBanner";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { me, loading } = useAuth();
@@ -33,6 +34,7 @@ function Shell() {
           <Route path="*" element={<Navigate to={me?.isOwner ? "/overview" : "/inbox"} replace />} />
         </Route>
       </Routes>
+      <InstallBanner />
     </StoreProvider>
   );
 }
