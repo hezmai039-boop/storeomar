@@ -121,6 +121,11 @@ export function AppShell() {
                 </NavLink>
               </li>
               <li>
+                <NavLink to="/stores" className={({ isActive }) => (isActive ? "is-active" : "")}>
+                  <span className="ic">▦</span> المتاجر
+                </NavLink>
+              </li>
+              <li>
                 <NavLink to="/onboarding" className={({ isActive }) => (isActive ? "is-active" : "")}>
                   <span className="ic">＋</span> إضافة متجر جديد
                 </NavLink>

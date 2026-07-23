@@ -11,6 +11,7 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { SimulationPage } from "./pages/SimulationPage";
 import { SimulatePage } from "./pages/SimulatePage";
 import { OnboardingPage } from "./pages/OnboardingPage";
+import { StoresAdminPage } from "./pages/StoresAdminPage";
 import { LandingPage } from "./pages/LandingPage";
 import { InstallBanner } from "./pwa/InstallBanner";
 import { usePermissions, PERMISSIONS, PermissionKey } from "./lib/permissions";
@@ -44,6 +45,7 @@ function Shell() {
       <Routes>
         <Route element={<AppShell />}>
           <Route path="/overview" element={<OverviewPage />} />
+          <Route path="/stores" element={<StoresAdminPage />} />
           <Route path="/onboarding" element={<OnboardingPage />} />
           <Route path="/inbox" element={<InboxPage />} />
           <Route path="/knowledge" element={<KnowledgePage />} />

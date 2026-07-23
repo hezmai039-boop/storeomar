@@ -157,6 +157,69 @@ tenancyRouter.post(
   })
 );
 
+const assignManagerSchema = z.object({
+  ownerName: z.string().min(1).max(120),
+  ownerEmail: z.string().email(),
+  ownerPassword: z.string().min(8, "كلمة المرور 8 أحرف على الأقل"),
+});
+
+// POST /v1/organizations/:orgId/stores/:storeId/assign-manager — owner-only.
+// onboard-store creates a brand-new store; this attaches a real client login
+// to an EXISTING one — exactly what the seeded demo stores need to stop being
+// "demo" and become client-editable (they were created with no login, so only
+// the platform owner could touch them). Creates (or reuses) the user and
+// grants store_manager on this store. Idempotent per (user, store).
+tenancyRouter.post(
+  "/organizations/:orgId/stores/:storeId/assign-manager",
+  requireStoreAccess(),
+  requireOwner(),
+  asyncHandler(async (req, res) => {
+    if (req.auth!.organizationId !== req.params.orgId) throw ApiError.storeAccessDenied();
+    const body = assignManagerSchema.parse(req.body);
+    const organizationId = req.params.orgId;
+
+    const store = await prisma.store.findFirst({ where: { id: req.params.storeId, organizationId } });
+    if (!store) throw ApiError.notFound("المتجر");
+
+    const existingUser = await prisma.user.findUnique({ where: { email: body.ownerEmail } });
+    if (existingUser && existingUser.organizationId !== organizationId) {
+      throw ApiError.badRequest("هذا البريد مسجّل بالفعل لمؤسسة أخرى");
+    }
+    const storeManagerRole = await prisma.role.findUniqueOrThrow({ where: { key: ROLES.STORE_MANAGER } });
+
+    const result = await prisma.$transaction(async (tx) => {
+      let user = existingUser;
+      const created = !user;
+      if (!user) {
+        const passwordHash = await bcrypt.hash(body.ownerPassword, 10);
+        user = await tx.user.create({
+          data: { organizationId, name: body.ownerName, email: body.ownerEmail, passwordHash, status: "active" },
+        });
+      }
+      await tx.userStoreRole.upsert({
+        where: { userId_storeId_roleId: { userId: user.id, storeId: store.id, roleId: storeManagerRole.id } },
+        create: { userId: user.id, storeId: store.id, roleId: storeManagerRole.id, grantedBy: req.auth!.userId },
+        update: {},
+      });
+      return { ownerEmail: user.email, ownerAccountCreated: created };
+    });
+
+    await withStoreContext([store.id], async (tx) => {
+      await writeAudit(tx, {
+        organizationId,
+        storeId: store.id,
+        actorUserId: req.auth!.userId,
+        action: "store.manager_assigned",
+        entityType: "store",
+        entityId: store.id,
+        after: { ownerEmail: result.ownerEmail, ownerAccountCreated: result.ownerAccountCreated },
+      });
+    });
+
+    res.status(201).json({ data: result });
+  })
+);
+
 // GET /v1/stores/:storeId
 tenancyRouter.get(
   "/stores/:storeId",
