@@ -165,7 +165,12 @@ export function SettingsPage() {
           credentials: channelCreds,
         }
       );
-      if (resp.data.webhookVerifyToken) {
+      // WhatsApp now uses one shared app-level webhook URL for every store
+      // (docs/22-whatsapp-store-onboarding-manual.md) — no per-account
+      // Callback URL/Verify Token to paste into Meta anymore, so skip the
+      // card below for it. Other channel types still use the legacy
+      // per-account route until they get the same treatment.
+      if (resp.data.webhookVerifyToken && channelTypeKey !== "whatsapp") {
         setLastVerifyToken({ channelId: resp.data.id, channelTypeKey, token: resp.data.webhookVerifyToken });
       }
       setChannelExternalId("");
@@ -392,6 +397,14 @@ export function SettingsPage() {
               </select>
             </div>
           </label>
+
+          {channelTypeKey === "whatsapp" && (
+            <div style={{ fontSize: 12, color: "var(--text-dim)", background: "var(--surface-2)", padding: "10px 12px", borderRadius: 8 }}>
+              قبل الربط: تأكد أن حساب واتساب هذا مُضاف كأصل في Business Manager
+              الخاص بك، وأنك نفّذت <code className="mono">POST /{"{WABA-ID}"}/subscribed_apps</code> له
+              مرة واحدة. التفاصيل في docs/22-whatsapp-store-onboarding-manual.md.
+            </div>
+          )}
 
           {channelTypeKey !== "mock" && (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
