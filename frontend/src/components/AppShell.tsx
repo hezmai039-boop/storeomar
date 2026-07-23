@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { useStore } from "../context/StoreContext";
 import { api } from "../api/client";
 import type { KnowledgeSuggestion } from "../api/types";
+import { usePermissions, PERMISSIONS } from "../lib/permissions";
 import "./AppShell.css";
 
 const PENDING_REVIEW_POLL_MS = 45_000;
@@ -11,6 +12,7 @@ const PENDING_REVIEW_POLL_MS = 45_000;
 export function AppShell() {
   const { me, logout } = useAuth();
   const { activeStore, setActiveStoreId } = useStore();
+  const { can } = usePermissions();
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const navigate = useNavigate();
@@ -149,16 +151,22 @@ export function AppShell() {
               <span className="ic">◎</span> التذاكر
             </NavLink>
           </li>
-          <li>
-            <NavLink to="/simulation" className={({ isActive }) => (isActive ? "is-active" : "")}>
-              <span className="ic">◐</span> المحاكاة
-            </NavLink>
-          </li>
-          <li>
-            <NavLink to="/settings" className={({ isActive }) => (isActive ? "is-active" : "")}>
-              <span className="ic">⚙</span> الإعدادات
-            </NavLink>
-          </li>
+          {/* Front-line agents don't manage simulation links or store
+              settings — hide what they can't use so no button ever 403s. */}
+          {can(PERMISSIONS.SIMULATION_MANAGE) && (
+            <li>
+              <NavLink to="/simulation" className={({ isActive }) => (isActive ? "is-active" : "")}>
+                <span className="ic">◐</span> المحاكاة
+              </NavLink>
+            </li>
+          )}
+          {can(PERMISSIONS.SETTINGS_MANAGE) && (
+            <li>
+              <NavLink to="/settings" className={({ isActive }) => (isActive ? "is-active" : "")}>
+                <span className="ic">⚙</span> الإعدادات
+              </NavLink>
+            </li>
+          )}
         </ul>
 
         <div className="sidebar-foot">Atlas · MVP قيد التطوير</div>

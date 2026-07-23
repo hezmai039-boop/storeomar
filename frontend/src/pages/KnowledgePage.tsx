@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiClientError } from "../api/client";
 import type { KnowledgeSource, KnowledgeSuggestion } from "../api/types";
 import { useStore } from "../context/StoreContext";
+import { usePermissions, PERMISSIONS } from "../lib/permissions";
 
 const FILE_TYPES = new Set(["pdf", "word", "excel"]);
 const SOURCE_TYPE_LABELS: Record<string, string> = {
@@ -17,6 +18,11 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
 
 export function KnowledgePage() {
   const { activeStore } = useStore();
+  const { can } = usePermissions();
+  // Agents may VIEW knowledge but not add sources or approve/reject
+  // suggestions (backend gates those with knowledge.manage / knowledge.approve).
+  const canManage = can(PERMISSIONS.KNOWLEDGE_MANAGE);
+  const canApprove = can(PERMISSIONS.KNOWLEDGE_APPROVE);
   const [tab, setTab] = useState<"pending" | "active">("pending");
   const [suggestions, setSuggestions] = useState<KnowledgeSuggestion[]>([]);
   const [sources, setSources] = useState<KnowledgeSource[]>([]);
@@ -93,9 +99,11 @@ export function KnowledgePage() {
             {activeStore.name} — لا تحديث تلقائي؛ كل إضافة تمر بموافقتك
           </p>
         </div>
-        <button className="btn btn-primary btn-sm" onClick={() => setShowAddForm((v) => !v)}>
-          {showAddForm ? "إغلاق" : "+ إضافة مصدر معرفة"}
-        </button>
+        {canManage && (
+          <button className="btn btn-primary btn-sm" onClick={() => setShowAddForm((v) => !v)}>
+            {showAddForm ? "إغلاق" : "+ إضافة مصدر معرفة"}
+          </button>
+        )}
       </div>
 
       {showAddForm && (
@@ -194,14 +202,16 @@ export function KnowledgePage() {
           suggestions.map((s) => (
             <div key={s.id} className="card" style={{ padding: "16px 18px", marginBottom: 12 }}>
               <div style={{ fontSize: 14, whiteSpace: "pre-wrap", marginBottom: 12 }}>{s.content}</div>
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                <button className="btn btn-danger btn-sm" onClick={() => decide(s.id, "reject")}>
-                  رفض
-                </button>
-                <button className="btn btn-good btn-sm" onClick={() => decide(s.id, "approve")}>
-                  موافقة وفهرسة
-                </button>
-              </div>
+              {canApprove && (
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                  <button className="btn btn-danger btn-sm" onClick={() => decide(s.id, "reject")}>
+                    رفض
+                  </button>
+                  <button className="btn btn-good btn-sm" onClick={() => decide(s.id, "approve")}>
+                    موافقة وفهرسة
+                  </button>
+                </div>
+              )}
             </div>
           ))
         ))}
@@ -230,9 +240,11 @@ export function KnowledgePage() {
                     <span className="badge badge-good">{s.status}</span>
                   </td>
                   <td style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)", fontSize: 13, textAlign: "left" }}>
-                    <button className="btn btn-danger btn-sm" onClick={() => deleteSource(s.id, s.title)}>
-                      حذف
-                    </button>
+                    {canManage && (
+                      <button className="btn btn-danger btn-sm" onClick={() => deleteSource(s.id, s.title)}>
+                        حذف
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

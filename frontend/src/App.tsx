@@ -13,11 +13,27 @@ import { SimulatePage } from "./pages/SimulatePage";
 import { OnboardingPage } from "./pages/OnboardingPage";
 import { LandingPage } from "./pages/LandingPage";
 import { InstallBanner } from "./pwa/InstallBanner";
+import { usePermissions, PERMISSIONS, PermissionKey } from "./lib/permissions";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { me, loading } = useAuth();
   if (loading) return <div style={{ padding: 40 }}>جارٍ التحميل…</div>;
   if (!me) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
+// Backstop for role-scoped pages: the nav already hides these links from
+// users without the permission, but a direct URL visit must not render a page
+// whose every action would 403. Shows a clean message instead.
+function RequirePermission({ permission, children }: { permission: PermissionKey; children: React.ReactNode }) {
+  const { can } = usePermissions();
+  if (!can(permission)) {
+    return (
+      <div style={{ padding: 40, color: "var(--text-dim)", fontSize: 14 }}>
+        هذه الصفحة غير متاحة لصلاحيتك. تواصل مع مدير المتجر إن كنت تحتاج الوصول إليها.
+      </div>
+    );
+  }
   return <>{children}</>;
 }
 
@@ -31,9 +47,23 @@ function Shell() {
           <Route path="/onboarding" element={<OnboardingPage />} />
           <Route path="/inbox" element={<InboxPage />} />
           <Route path="/knowledge" element={<KnowledgePage />} />
-          <Route path="/simulation" element={<SimulationPage />} />
+          <Route
+            path="/simulation"
+            element={
+              <RequirePermission permission={PERMISSIONS.SIMULATION_MANAGE}>
+                <SimulationPage />
+              </RequirePermission>
+            }
+          />
           <Route path="/tickets" element={<TicketsPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
+          <Route
+            path="/settings"
+            element={
+              <RequirePermission permission={PERMISSIONS.SETTINGS_MANAGE}>
+                <SettingsPage />
+              </RequirePermission>
+            }
+          />
           <Route path="*" element={<Navigate to={me?.isOwner ? "/overview" : "/inbox"} replace />} />
         </Route>
       </Routes>
