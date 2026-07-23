@@ -94,6 +94,21 @@ export interface StoreOverview {
   openTickets: number;
 }
 
+export interface ChannelHealthEntry {
+  id: string;
+  displayName: string;
+  channelType: string;
+  status: string;
+  externalAccountId: string;
+  connectedAt: string | null;
+}
+
+export interface StoreChannelHealth {
+  id: string;
+  name: string;
+  channels: ChannelHealthEntry[];
+}
+
 export interface PageMeta {
   next_cursor: string | null;
   has_more: boolean;

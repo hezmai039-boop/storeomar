@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import { env } from "./config/env";
+import { prisma } from "./db/prisma";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 import { apiRateLimiter, authRateLimiter } from "./lib/rateLimit";
 
@@ -33,7 +34,22 @@ app.use(express.json({ limit: "5mb" }));
 app.use("/v1", apiRateLimiter);
 app.use("/v1/auth/login", authRateLimiter);
 
+// Liveness — "is the process up?". Cheap, no dependencies, never touches
+// the DB, so a DB hiccup can't cause the orchestrator to kill a healthy
+// process. This is what Render's health check should point at.
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
+
+// Readiness — "can it actually serve traffic?". Pings the DB with a trivial
+// query. Use this for uptime monitoring / pre-traffic gating, NOT for
+// liveness (a transient DB blip returning 503 here must not restart the app).
+app.get("/health/ready", async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ status: "ready", db: "ok" });
+  } catch (err) {
+    res.status(503).json({ status: "unavailable", db: "error", message: (err as Error).message });
+  }
+});
 
 // Mounted before identityRouter/tenancyRouter/auditRouter on purpose:
 // those three call `.use(authenticate)` unconditionally inside themselves,

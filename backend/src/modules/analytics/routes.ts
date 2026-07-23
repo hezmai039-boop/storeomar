@@ -64,6 +64,52 @@ analyticsRouter.get(
   })
 );
 
+// GET /v1/organizations/:orgId/reports/channel-health — owner's at-a-glance
+// operational view of every store's connected channels. The point is to
+// surface an expired/errored WhatsApp token on ANY store immediately (it
+// shows as status "error"/"disconnected"), so the owner knows to rotate
+// credentials (Settings → تحديث بيانات الاعتماد) before customers are hit
+// by silent delivery failures. Credentials are never included — only the
+// account's public status/identity fields.
+analyticsRouter.get(
+  "/organizations/:orgId/reports/channel-health",
+  authenticate,
+  requireOwner(),
+  asyncHandler(async (req, res) => {
+    const storeIds = await accessibleStoreIdsFor(req.auth!.userId, req.auth!.organizationId);
+    const stores = await prisma.store.findMany({ where: { id: { in: storeIds } }, orderBy: { name: "asc" } });
+    const rows = await withStoreContext(
+      storeIds,
+      (tx) =>
+        tx.channelAccount.findMany({
+          where: { storeId: { in: storeIds } },
+          select: {
+            id: true,
+            storeId: true,
+            displayName: true,
+            status: true,
+            externalAccountId: true,
+            connectedAt: true,
+            channelType: { select: { key: true } },
+          },
+        }),
+      { timeoutMs: 20000 }
+    );
+    const byStore = new Map(stores.map((s) => [s.id, { id: s.id, name: s.name, channels: [] as unknown[] }]));
+    for (const r of rows) {
+      byStore.get(r.storeId)?.channels.push({
+        id: r.id,
+        displayName: r.displayName,
+        channelType: r.channelType.key,
+        status: r.status,
+        externalAccountId: r.externalAccountId,
+        connectedAt: r.connectedAt,
+      });
+    }
+    res.json({ data: { stores: Array.from(byStore.values()) } });
+  })
+);
+
 // GET /v1/stores/:storeId/reports/daily?from=&to=
 analyticsRouter.get(
   "/stores/:storeId/reports/daily",

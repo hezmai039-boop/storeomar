@@ -131,6 +131,10 @@ export function SettingsPage() {
   const [platformSubmitting, setPlatformSubmitting] = useState(false);
   const [platformError, setPlatformError] = useState<string | null>(null);
 
+  const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncResult, setSyncResult] = useState<{ id: string; orders: number; products: number } | null>(null);
+
   const [agent, setAgent] = useState<AiAgent | null>(null);
   const [togglingAdvanced, setTogglingAdvanced] = useState(false);
   const [advancedError, setAdvancedError] = useState<string | null>(null);
@@ -165,7 +169,12 @@ export function SettingsPage() {
           credentials: channelCreds,
         }
       );
-      if (resp.data.webhookVerifyToken) {
+      // WhatsApp now uses one shared app-level webhook URL for every store
+      // (docs/22-whatsapp-store-onboarding-manual.md) — no per-account
+      // Callback URL/Verify Token to paste into Meta anymore, so skip the
+      // card below for it. Other channel types still use the legacy
+      // per-account route until they get the same treatment.
+      if (resp.data.webhookVerifyToken && channelTypeKey !== "whatsapp") {
         setLastVerifyToken({ channelId: resp.data.id, channelTypeKey, token: resp.data.webhookVerifyToken });
       }
       setChannelExternalId("");
@@ -246,6 +255,23 @@ export function SettingsPage() {
       setPlatformError(err instanceof ApiClientError ? err.message : "تعذّر ربط المنصة");
     } finally {
       setPlatformSubmitting(false);
+    }
+  }
+
+  async function syncIntegration(integration: Integration) {
+    setSyncingId(integration.id);
+    setSyncError(null);
+    setSyncResult(null);
+    try {
+      const resp = await api.post<{ data: { orders: number; products: number } }>(
+        `/v1/stores/${activeStore!.id}/integrations/${integration.id}/sync`
+      );
+      setSyncResult({ id: integration.id, orders: resp.data.orders, products: resp.data.products });
+      reload();
+    } catch (err) {
+      setSyncError(err instanceof ApiClientError ? err.message : "تعذّرت المزامنة");
+    } finally {
+      setSyncingId(null);
     }
   }
 
@@ -393,6 +419,14 @@ export function SettingsPage() {
             </div>
           </label>
 
+          {channelTypeKey === "whatsapp" && (
+            <div style={{ fontSize: 12, color: "var(--text-dim)", background: "var(--surface-2)", padding: "10px 12px", borderRadius: 8 }}>
+              قبل الربط: تأكد أن حساب واتساب هذا مُضاف كأصل في Business Manager
+              الخاص بك، وأنك نفّذت <code className="mono">POST /{"{WABA-ID}"}/subscribed_apps</code> له
+              مرة واحدة. التفاصيل في docs/22-whatsapp-store-onboarding-manual.md.
+            </div>
+          )}
+
           {channelTypeKey !== "mock" && (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
@@ -523,8 +557,25 @@ export function SettingsPage() {
                 <span style={{ fontWeight: 700, fontSize: 13.5 }}>{i.platform}</span>
               </div>
               <span className={`badge ${i.status === "connected" ? "badge-good" : "badge-critical"}`}>{i.status}</span>
+              <div style={{ fontSize: 11.5, color: "var(--text-faint)", marginTop: 10 }}>
+                {i.lastSyncedAt ? `آخر مزامنة: ${new Date(i.lastSyncedAt).toLocaleString("ar-SA")}` : "لم تتم المزامنة بعد"}
+              </div>
+              <button
+                className="btn btn-ghost btn-sm"
+                style={{ marginTop: 10, width: "100%" }}
+                disabled={syncingId === i.id}
+                onClick={() => syncIntegration(i)}
+              >
+                {syncingId === i.id ? "جارٍ المزامنة…" : "مزامنة الآن (الطلبات والمنتجات)"}
+              </button>
+              {syncResult?.id === i.id && (
+                <div style={{ fontSize: 11.5, color: "var(--good)", marginTop: 6 }}>
+                  تمت مزامنة {syncResult.orders} طلب و{syncResult.products} منتج.
+                </div>
+              )}
             </div>
           ))}
+          {syncError && <div style={{ color: "var(--critical)", fontSize: 12.5, gridColumn: "1 / -1" }}>{syncError}</div>}
         </div>
 
         <form onSubmit={connectIntegration} className="card" style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>

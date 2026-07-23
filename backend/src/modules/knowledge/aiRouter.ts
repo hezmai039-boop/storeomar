@@ -1,13 +1,21 @@
 import { Prisma } from "@prisma/client";
-import { gatherAiContext, completeAiPipeline, AiContext, AiPipelineResult } from "./aiPipeline";
+import { gatherAiContext, completeAiPipeline, buildEscalationAck, AiContext, AiPipelineResult } from "./aiPipeline";
 import { gatherOrchestratorContext, completeOrchestratorRun, OrchestratorContext, OrchestratorResult } from "../ai-intelligence/orchestrator";
 
 // Exported for testability — the only real branching logic in this file
 // that doesn't require a DB transaction or a network call to exercise.
-export function mapOrchestratorResultToPipelineResult(result: OrchestratorResult): AiPipelineResult {
+export function mapOrchestratorResultToPipelineResult(
+  result: OrchestratorResult,
+  storeName: string,
+  persona?: Prisma.JsonValue
+): AiPipelineResult {
   return {
     confidenceLevel: result.confidence,
-    replyText: result.replyText,
+    // When the advanced engine escalates without producing any text, fall
+    // back to the same customer-facing acknowledgment the classic pipeline
+    // sends — so a low-confidence escalation is never silent on either
+    // engine. If the model did produce text (e.g. "لست متأكدًا"), keep it.
+    replyText: result.replyText ?? (result.escalate ? buildEscalationAck(storeName, persona) : null),
     createTicket: result.escalate,
     escalationReason: result.escalate
       ? "ثقة منخفضة من طبقة الذكاء الاصطناعي المتقدمة — لا نتيجة مؤكدة من الأدوات أو قاعدة المعرفة"
@@ -19,6 +27,12 @@ export interface AiReplyContext {
   mode: "classic" | "advanced" | "paused";
   classic?: AiContext;
   advanced?: OrchestratorContext;
+  // The advanced engine's OrchestratorContext doesn't carry the agent
+  // persona, but gatherAiReply already loaded the agent to read the
+  // advancedIntelligenceEnabled switch — so we stash the persona here to let
+  // the advanced escalation acknowledgment honor the store's custom/disabled
+  // ack setting, exactly like the classic path does.
+  persona?: Prisma.JsonValue;
 }
 
 export interface GatherAiReplyParams {
@@ -70,7 +84,7 @@ export async function gatherAiReply(tx: Prisma.TransactionClient, params: Gather
       organizationId: params.organizationId,
       question: params.question,
     });
-    return { mode: "advanced", advanced };
+    return { mode: "advanced", advanced, persona: agent?.persona ?? {} };
   }
 
   const classic = await gatherAiContext(tx, { storeId: params.storeId, question: params.question });
@@ -97,7 +111,7 @@ export async function completeAiReply(
 
   if (context.mode === "advanced" && context.advanced) {
     const result = await completeOrchestratorRun(context.advanced);
-    return mapOrchestratorResultToPipelineResult(result);
+    return mapOrchestratorResultToPipelineResult(result, params.storeName, context.persona);
   }
 
   // context.classic is always set when mode === "classic" — gatherAiReply

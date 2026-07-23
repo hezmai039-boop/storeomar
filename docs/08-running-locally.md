@@ -132,6 +132,12 @@ curl -X POST http://localhost:4000/v1/webhooks/channels/mock/<channel-account-id
 - أسرار توقيع القنوات/التكاملات (`WHATSAPP_APP_SECRET`, `META_APP_SECRET`,
   `SALLA_WEBHOOK_SECRET`, ...) — مطلوبة فقط لربط حسابات حقيقية؛ القناة
   والتكامل التجريبيان (`mock`) يعملان بدونها.
+- `WHATSAPP_WEBHOOK_VERIFY_TOKEN` — قيمة ثابتة واحدة تختارها أنت (أي نص
+  عشوائي)، تُدخَل مرة واحدة فقط في: (أ) متغيرات البيئة هنا، و(ب) إعدادات
+  Webhook لتطبيق Meta نفسه (Verify Token). تُستخدم في مسار واتساب الموحّد
+  `/v1/webhooks/whatsapp` الذي يخدم كل المتاجر عبر تطبيق Meta واحد — راجع
+  `docs/21-meta-tech-provider-guide.md` لتفاصيل الإعداد لمرة واحدة وخطوات
+  إضافة كل متجر جديد بعدها.
 - `UPLOADS_DIR` — أين تُحفظ ملفات قاعدة المعرفة المرفوعة (افتراضيًا
   `backend/uploads/`؛ في Docker Compose يُشار إلى `/app/uploads` مع Volume
   مخصص `atlas_uploads` حتى تبقى الملفات بعد إعادة تشغيل الحاوية).
