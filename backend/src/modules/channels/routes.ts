@@ -117,6 +117,42 @@ channelsRouter.post(
   })
 );
 
+const updateCredentialsSchema = z.object({ credentials: z.record(z.unknown()) });
+
+// PATCH /v1/stores/:storeId/channel-accounts/:id/credentials — rotate a
+// channel's access token (e.g. after a temporary WhatsApp token expires)
+// without deleting/recreating the account. Recreating would mint a new
+// channelAccountId, which breaks the webhook Callback URL already
+// configured on Meta's side — this lets the store keep the same account
+// (and the same webhook URL) and just refresh what's expired.
+channelsRouter.patch(
+  "/channel-accounts/:id/credentials",
+  requirePermission(PERMISSIONS.CHANNELS_MANAGE),
+  asyncHandler(async (req, res) => {
+    const body = updateCredentialsSchema.parse(req.body);
+    const updated = await withStoreContext(req.storeAccess!.accessibleStoreIds, async (tx) => {
+      const account = await tx.channelAccount.findFirstOrThrow({
+        where: { id: req.params.id, storeId: req.storeAccess!.storeId },
+      });
+      const result = await tx.channelAccount.update({
+        where: { id: account.id },
+        data: { credentialsEncrypted: encryptSecret(JSON.stringify(body.credentials)), status: "connected" },
+      });
+      await writeAudit(tx, {
+        organizationId: req.auth!.organizationId,
+        storeId: req.storeAccess!.storeId,
+        actorUserId: req.auth!.userId,
+        action: "channel.credentials_updated",
+        entityType: "channel_account",
+        entityId: account.id,
+      });
+      return result;
+    });
+    const { credentialsEncrypted, ...safe } = updated;
+    res.json({ data: safe });
+  })
+);
+
 // DELETE /v1/stores/:storeId/channel-accounts/:id
 channelsRouter.delete(
   "/channel-accounts/:id",
