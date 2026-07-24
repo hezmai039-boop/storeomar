@@ -12,6 +12,7 @@ import { SimulationPage } from "./pages/SimulationPage";
 import { SimulatePage } from "./pages/SimulatePage";
 import { OnboardingPage } from "./pages/OnboardingPage";
 import { StoresAdminPage } from "./pages/StoresAdminPage";
+import { AccountPage } from "./pages/AccountPage";
 import { LandingPage } from "./pages/LandingPage";
 import { InstallBanner } from "./pwa/InstallBanner";
 import { usePermissions, PERMISSIONS, PermissionKey } from "./lib/permissions";
@@ -58,6 +59,7 @@ function Shell() {
             }
           />
           <Route path="/tickets" element={<TicketsPage />} />
+          <Route path="/account" element={<AccountPage />} />
           <Route
             path="/settings"
             element={

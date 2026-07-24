@@ -43,6 +43,44 @@ identityRouter.post(
   })
 );
 
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "أدخل كلمة المرور الحالية"),
+  newPassword: z.string().min(8, "كلمة المرور الجديدة 8 أحرف على الأقل"),
+});
+
+// POST /v1/auth/change-password — any authenticated user changes their OWN
+// password. Closes the launch-blocking gap where every account still used a
+// seeded default password (public in seed.ts) with no way to change it in the
+// UI. Requires the current password (so a hijacked-but-unlocked session can't
+// silently lock the real owner out), and never logs either password.
+identityRouter.post(
+  "/auth/change-password",
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const body = changePasswordSchema.parse(req.body);
+    if (body.newPassword === body.currentPassword) {
+      throw ApiError.badRequest("كلمة المرور الجديدة يجب أن تختلف عن الحالية");
+    }
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: req.auth!.userId } });
+    const valid = await bcrypt.compare(body.currentPassword, user.passwordHash);
+    if (!valid) throw ApiError.unauthorized("كلمة المرور الحالية غير صحيحة");
+
+    const passwordHash = await bcrypt.hash(body.newPassword, 10);
+    await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
+    await withStoreContext([], async (tx) => {
+      await writeAudit(tx, {
+        organizationId: user.organizationId,
+        actorUserId: user.id,
+        action: "user.password_changed",
+        entityType: "user",
+        entityId: user.id,
+        ip: req.ip,
+      });
+    });
+    res.json({ data: { ok: true } });
+  })
+);
+
 // GET /v1/me — identity + every store this user may open, so the frontend
 // can build the sidebar / store switcher from one call (user-flows.md §1).
 identityRouter.get(

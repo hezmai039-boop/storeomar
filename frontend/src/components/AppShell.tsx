@@ -53,7 +53,19 @@ export function AppShell() {
         <div className="breadcrumb">
           {activeStore && <span>{activeStore.name} /</span>}
         </div>
-        <div className="topbar-actions">
+        <div className="topbar-actions" style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <NavLink
+            to="/account"
+            title="حسابي وكلمة المرور"
+            style={({ isActive }) => ({
+              fontSize: 13,
+              color: isActive ? "var(--primary-strong)" : "var(--text-dim)",
+              textDecoration: "none",
+              fontWeight: isActive ? 700 : 500,
+            })}
+          >
+            حسابي
+          </NavLink>
           <button className="avatar" title={`${me.name} — تسجيل الخروج`} onClick={logout}>
             {me.name.slice(0, 1)}
           </button>
