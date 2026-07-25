@@ -236,7 +236,7 @@ channelsRouter.post(
   requirePermission(PERMISSIONS.CONVERSATIONS_REPLY),
   asyncHandler(async (req, res) => {
     const idemKey = req.header("Idempotency-Key");
-    const replay = getIdempotentReplay(idemKey);
+    const replay = await getIdempotentReplay(idemKey);
     if (replay) return res.status(replay.status).json(replay.body);
 
     const body = replySchema.parse(req.body);
@@ -291,7 +291,7 @@ channelsRouter.post(
 
     publish(req.storeAccess!.storeId, { type: "message.created", conversationId: req.params.id, messageId: result.id });
     const responseBody = { data: result };
-    storeIdempotentResponse(idemKey, 201, responseBody);
+    await storeIdempotentResponse(idemKey, 201, responseBody);
     res.status(201).json(responseBody);
   })
 );

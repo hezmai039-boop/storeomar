@@ -34,4 +34,9 @@ export const env = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "8h",
   corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:5173",
   encryptionKey: required("ENCRYPTION_KEY"),
+  // Optional. Set it to run more than one backend instance: rate limits,
+  // idempotency records and live-inbox events become shared across
+  // processes instead of per-process. Unset = today's single-instance
+  // in-memory behaviour, unchanged. See src/lib/redis.ts.
+  redisUrl: process.env.REDIS_URL,
 };
