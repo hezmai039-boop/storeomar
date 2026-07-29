@@ -64,7 +64,12 @@ function periodEndFor(start: Date, interval: string): Date {
  * year makes the second request simply get ...0008.
  */
 async function nextInvoiceNumber(tx: Prisma.TransactionClient, year: string): Promise<string> {
-  await tx.$queryRawUnsafe("SELECT pg_advisory_xact_lock($1::bigint)", 81000000 + Number(year));
+  // $executeRawUnsafe, NOT $queryRawUnsafe: pg_advisory_xact_lock() returns
+  // SQL `void`, and the query path tries to deserialize that column into a
+  // JS value and fails with P2010 ("Failed to deserialize column of type
+  // 'void'") — which surfaces as a 500 on every single subscribe. The
+  // execute path just reports a row count, which is all a lock needs.
+  await tx.$executeRawUnsafe("SELECT pg_advisory_xact_lock($1::bigint)", 81000000 + Number(year));
   // Lexicographic max == numeric max only while the counter is zero-padded
   // to the same width; revisit the padding before any single year issues a
   // 10,000th invoice.
