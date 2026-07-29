@@ -12,6 +12,9 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
     "prisma:migrate:dev": "prisma migrate dev",
+    "prisma:baseline": "prisma migrate resolve --applied 0_init",
+    "db:drift": "prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma --script",
+    "deploy:db": "npm run prisma:migrate && npm run apply-rls && npm run seed",
     "apply-rls": "tsx prisma/apply-rls.ts",
     "seed": "tsx prisma/seed.ts"
   },
