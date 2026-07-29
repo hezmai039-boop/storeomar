@@ -68,3 +68,27 @@ using (
     string_to_array(current_setting('app.accessible_store_ids', true), ',')::uuid[]
   )
 );
+
+-- ------------------------------------------------------------------
+-- Tables with a store_id that are DELIBERATELY excluded from the loop
+-- above. Adding a store_isolation policy to either would break a
+-- working flow, so this list exists to stop the next person "fixing"
+-- an apparent oversight — docs/29 states the rule that every store_id
+-- table gets a policy, and these are its two documented exceptions.
+--
+--   oauth_states
+--     Read by GET /v1/integrations/oauth/:platform/callback, which is a
+--     browser redirect from Salla/Zid with no session and therefore no
+--     app.accessible_store_ids set. A policy keyed on that setting would
+--     match nothing and every merchant's connect flow would fail. The
+--     row is protected by its own 32-byte single-use `state` secret
+--     instead — knowing it IS the proof of having initiated the flow —
+--     and no API route lists or enumerates the table.
+--
+--   user_store_roles
+--     Read by resolveAccess() in middleware/rbac.ts to work out which
+--     stores a user may touch. That query necessarily runs BEFORE store
+--     context exists — it is what computes the context — so a policy
+--     depending on the context would be circular and deny everyone.
+--     Scoped explicitly by userId + store.organizationId at the query.
+-- ------------------------------------------------------------------
