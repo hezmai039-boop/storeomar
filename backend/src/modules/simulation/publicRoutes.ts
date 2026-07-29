@@ -5,6 +5,7 @@ import { withStoreContext } from "../../db/withStoreContext";
 import { asyncHandler } from "../../lib/asyncHandler";
 import { simulationRateLimiter } from "../../lib/rateLimit";
 import { gatherAiReply, completeAiReply } from "../knowledge/aiRouter";
+import { aiResponseLogUsageFields } from "../knowledge/aiPipeline";
 import { createTicketFromConversation } from "../tickets/service";
 import { publish } from "../channels/realtime";
 import { resolveSimulationLink, ensureSimulationChannelAccount, withConflictRetry } from "./service";
@@ -147,6 +148,11 @@ simulationPublicRouter.post(
             messageId: aiMsg.id,
             confidenceLevel: result.confidenceLevel,
             actionTaken: result.confidenceLevel === "high" ? "answered" : "flagged_for_review",
+            // Simulation traffic costs real tokens against the same
+            // Anthropic bill as production, so it must be metered too —
+            // otherwise a store testing heavily looks free in the margin
+            // report while quietly being the most expensive tenant.
+            ...aiResponseLogUsageFields(result),
           },
         });
       }
@@ -168,6 +174,7 @@ simulationPublicRouter.post(
             conversationId: conversation.id,
             confidenceLevel: result.confidenceLevel,
             actionTaken: "escalated_to_human",
+            ...aiResponseLogUsageFields(result),
           },
         });
       }

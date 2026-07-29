@@ -361,6 +361,87 @@ async function main() {
     update: {},
   });
 
+  // --- Billing: plans, the platform admin, and a starting subscription ---
+  // Upserted by `key` so re-running the seed (docker-entrypoint.sh runs it on
+  // every deploy) never duplicates a plan or resets a live customer's price.
+  // Prices are HALALAS (SAR × 100); null quota = unlimited, never 0.
+  const planDefs = [
+    {
+      key: "free",
+      name: "المجانية",
+      nameEn: "Free",
+      priceHalalas: 0,
+      maxStores: 1,
+      maxUsers: 2,
+      maxAiRepliesMonthly: 100,
+      sortOrder: 1,
+      features: ["متجر واحد", "مستخدمان", "100 رد ذكي شهريًا", "قناة واتساب واحدة"],
+    },
+    {
+      key: "basic",
+      name: "الأساسية",
+      nameEn: "Basic",
+      priceHalalas: 29900,
+      maxStores: 3,
+      maxUsers: 5,
+      maxAiRepliesMonthly: 2000,
+      sortOrder: 2,
+      features: ["3 متاجر", "5 مستخدمين", "2000 رد ذكي شهريًا", "جميع القنوات", "التقارير الأساسية"],
+    },
+    {
+      key: "pro",
+      name: "الاحترافية",
+      nameEn: "Pro",
+      priceHalalas: 79900,
+      maxStores: null,
+      maxUsers: null,
+      maxAiRepliesMonthly: 20000,
+      sortOrder: 3,
+      features: ["متاجر بلا حد", "مستخدمون بلا حد", "20000 رد ذكي شهريًا", "ذكاء الأعمال", "دعم مخصص"],
+    },
+  ];
+  const planByKey = new Map<string, { id: string }>();
+  for (const def of planDefs) {
+    const plan = await prisma.plan.upsert({
+      where: { key: def.key },
+      create: { ...def, currency: "SAR", interval: "monthly", isActive: true },
+      update: {
+        name: def.name,
+        nameEn: def.nameEn,
+        priceHalalas: def.priceHalalas,
+        maxStores: def.maxStores,
+        maxUsers: def.maxUsers,
+        maxAiRepliesMonthly: def.maxAiRepliesMonthly,
+        features: def.features,
+        sortOrder: def.sortOrder,
+      },
+    });
+    planByKey.set(def.key, plan);
+  }
+
+  // The platform operator — the only account allowed to confirm that a bank
+  // transfer actually arrived (src/middleware/rbac.ts requirePlatformAdmin).
+  // No API route sets this flag; it is granted here, deliberately, once.
+  await prisma.user.update({ where: { id: owner.id }, data: { isPlatformAdmin: true } });
+
+  // Every org starts on `free` so nothing in the app has to handle a null
+  // subscription — getEffectivePlan() falls back to `free` anyway, but a real
+  // row means the billing screen and the usage counters have something to
+  // point at from the first request.
+  const freePeriodEnd = new Date();
+  freePeriodEnd.setMonth(freePeriodEnd.getMonth() + 1);
+  await prisma.subscription.upsert({
+    where: { organizationId: organization.id },
+    create: {
+      organizationId: organization.id,
+      planId: planByKey.get("free")!.id,
+      status: "trialing",
+      provider: "manual",
+      currentPeriodEnd: freePeriodEnd,
+    },
+    update: {},
+  });
+
   console.log("Seed complete.");
   console.log("Owner login: hezmai039@gmail.com / Owner!2026");
   console.log("Store manager login: manager@albayan.demo / Manager!2026");

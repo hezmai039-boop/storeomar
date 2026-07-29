@@ -141,3 +141,99 @@ export interface SimulationLink {
   isActive: boolean;
   createdAt: string;
 }
+
+/* ---------- billing ----------
+   Money is always an INTEGER count of halalas (SAR × 100) so no float ever
+   touches an amount; render it through formatSar() in BillingPage. A null on
+   any quota limit means UNLIMITED, never zero. */
+
+export interface Plan {
+  id: string;
+  key: "free" | "basic" | "pro";
+  name: string;
+  nameEn: string;
+  priceHalalas: number;
+  currency: string;
+  interval: "monthly" | "yearly";
+  maxStores: number | null;
+  maxUsers: number | null;
+  maxAiRepliesMonthly: number | null;
+  features: string[];
+  sortOrder: number;
+}
+
+export type SubscriptionStatus = "trialing" | "active" | "past_due" | "canceled";
+
+export interface Subscription {
+  id: string;
+  status: SubscriptionStatus;
+  currentPeriodEnd: string;
+  trialEndsAt: string | null;
+  provider: string;
+}
+
+export interface QuotaUsage {
+  used: number;
+  limit: number | null;
+}
+
+export interface BillingUsage {
+  period: string;
+  aiReplies: number;
+  limit: number | null;
+  remaining: number | null;
+  percentUsed: number;
+  inputTokens: number;
+  outputTokens: number;
+  costMicroUsd: number;
+  stores: QuotaUsage;
+  users: QuotaUsage;
+}
+
+export interface BillingOverview {
+  subscription: Subscription | null;
+  plan: Plan | null;
+  usage: BillingUsage;
+}
+
+export type InvoiceStatus = "pending" | "awaiting_review" | "paid" | "rejected" | "void";
+
+export interface Invoice {
+  id: string;
+  number: string;
+  status: InvoiceStatus;
+  subtotalHalalas: number;
+  vatHalalas: number;
+  totalHalalas: number;
+  currency: string;
+  periodStart: string;
+  periodEnd: string;
+  transferRef: string | null;
+  reviewNote: string | null;
+  createdAt: string;
+}
+
+/** Only the platform-staff admin listing carries the paying organization. */
+export interface AdminInvoice extends Invoice {
+  organization: { id: string; name: string; slug: string };
+}
+
+export interface TransferInstructions {
+  bankName: string;
+  accountName: string;
+  iban: string;
+  reference: string;
+  note: string;
+}
+
+export interface CheckoutInstruction {
+  kind: "offline_transfer" | "redirect";
+  instructions?: TransferInstructions;
+  redirectUrl?: string;
+}
+
+export interface SubscribeResult {
+  subscription: Subscription;
+  invoice: Invoice | null;
+  checkout: CheckoutInstruction | null;
+}

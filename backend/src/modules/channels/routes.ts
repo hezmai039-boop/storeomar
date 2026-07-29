@@ -317,7 +317,13 @@ channelsRouter.post(
         knowledgeContext: "",
         question: `لخّص هذه المحادثة في جملتين للموظف:\n${transcript}`,
       });
-      return llmSummary ?? `آخر ${messages.length} رسائل: ${messages[messages.length - 1].content}`;
+      // `.text`, not the object: generateGroundedAnswer now returns
+      // { text, usage, model } so callers can meter token cost. tsc can't
+      // catch this one — the object is still assignable to res.json, so
+      // getting it wrong would silently ship a JSON blob to the UI where a
+      // summary string belongs, but only on deployments that actually set
+      // ANTHROPIC_API_KEY.
+      return llmSummary?.text ?? `آخر ${messages.length} رسائل: ${messages[messages.length - 1].content}`;
     });
     res.json({ data: { summary } });
   })

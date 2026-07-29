@@ -18,6 +18,7 @@ import { auditRouter } from "./modules/audit/routes";
 import { aiIntelligenceRouter } from "./modules/ai-intelligence/routes";
 import { simulationRouter } from "./modules/simulation/routes";
 import { simulationPublicRouter } from "./modules/simulation/publicRoutes";
+import { billingRouter } from "./modules/billing/routes";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -72,6 +73,9 @@ app.use("/v1/stores/:storeId", ticketsRouter);
 app.use("/v1/stores/:storeId", integrationsRouter);
 app.use("/v1/stores/:storeId/ai-intelligence", aiIntelligenceRouter);
 app.use("/v1/stores/:storeId/simulation-links", simulationRouter);
+// Organization-scoped, so it gets its own prefix rather than a
+// /v1/stores/:storeId mount — there is no store in a billing path.
+app.use("/v1/billing", billingRouter);
 app.use("/v1", analyticsRouter);
 app.use("/v1", auditRouter);
 

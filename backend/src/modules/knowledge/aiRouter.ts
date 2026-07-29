@@ -1,6 +1,8 @@
 import { Prisma } from "@prisma/client";
 import { gatherAiContext, completeAiPipeline, buildEscalationAck, AiContext, AiPipelineResult } from "./aiPipeline";
 import { gatherOrchestratorContext, completeOrchestratorRun, OrchestratorContext, OrchestratorResult } from "../ai-intelligence/orchestrator";
+import { checkQuota, recordAiUsage } from "../billing/service";
+import { QUOTA_KEYS } from "../../lib/permissions";
 
 // Exported for testability — the only real branching logic in this file
 // that doesn't require a DB transaction or a network call to exercise.
@@ -24,9 +26,14 @@ export function mapOrchestratorResultToPipelineResult(
 }
 
 export interface AiReplyContext {
-  mode: "classic" | "advanced" | "paused";
+  mode: "classic" | "advanced" | "paused" | "quota_exceeded";
   classic?: AiContext;
   advanced?: OrchestratorContext;
+  // Carried from the gather phase so completeAiReply can meter the reply
+  // against the paying organization without re-opening a transaction to
+  // look the store's org back up. Absent on "paused"/"quota_exceeded",
+  // which by construction spend nothing.
+  organizationId?: string;
   // The advanced engine's OrchestratorContext doesn't carry the agent
   // persona, but gatherAiReply already loaded the agent to read the
   // advancedIntelligenceEnabled switch — so we stash the persona here to let
@@ -75,6 +82,18 @@ export async function gatherAiReply(tx: Prisma.TransactionClient, params: Gather
     return { mode: "paused" };
   }
 
+  // Plan quota is checked HERE — before either engine touches retrieval or
+  // the LLM — for the same reason the pause switch is: an organization past
+  // its monthly automated-reply limit must cost us nothing per inbound
+  // message. Checking after the fact would still pay for the tokens of
+  // every reply we then refuse to send, which is the exact expense the
+  // quota exists to cap. It also means the advanced engine's multi-call
+  // tool loop (several round-trips per message) never starts at all.
+  const quota = await checkQuota(params.organizationId, QUOTA_KEYS.AI_REPLIES_MONTHLY);
+  if (!quota.allowed) {
+    return { mode: "quota_exceeded" };
+  }
+
   if (agent?.advancedIntelligenceEnabled) {
     const advanced = await gatherOrchestratorContext(tx, {
       storeId: params.storeId,
@@ -84,11 +103,11 @@ export async function gatherAiReply(tx: Prisma.TransactionClient, params: Gather
       organizationId: params.organizationId,
       question: params.question,
     });
-    return { mode: "advanced", advanced, persona: agent?.persona ?? {} };
+    return { mode: "advanced", advanced, persona: agent?.persona ?? {}, organizationId: params.organizationId };
   }
 
   const classic = await gatherAiContext(tx, { storeId: params.storeId, question: params.question });
-  return { mode: "classic", classic };
+  return { mode: "classic", classic, organizationId: params.organizationId };
 }
 
 /**
@@ -109,12 +128,63 @@ export async function completeAiReply(
     return { confidenceLevel: "low", replyText: null, createTicket: false };
   }
 
+  if (context.mode === "quota_exceeded") {
+    // THE CUSTOMER'S MESSAGE IS NEVER DROPPED BECAUSE OF BILLING.
+    //
+    // This deliberately reuses the exact shape of a low-confidence
+    // escalation: replyText null (no automated answer is sent) but
+    // createTicket true, so the conversation lands in front of a human on
+    // the same path staff already work every day. The end customer is still
+    // served — only the automation stops.
+    //
+    // Equally deliberately, this NEVER throws and never returns an error to
+    // the channel. Throwing here would surface to WhatsApp/Instagram as a
+    // failed webhook (retries, eventually a disabled subscription) and to a
+    // simulation visitor as a 500 — i.e. our billing state would look like
+    // an outage of the store's support line. A commercial limit is our
+    // problem to solve with the store owner, not the shopper's.
+    //
+    // The store owner learns about it through billing/usage (the dashboard's
+    // remaining-quota figure and the tickets suddenly arriving unanswered),
+    // not by their customers hitting a wall.
+    return {
+      confidenceLevel: "low",
+      replyText: null,
+      createTicket: true,
+      escalationReason: "تجاوز الحد الشهري للردود الآلية في الباقة الحالية",
+    };
+  }
+
   if (context.mode === "advanced" && context.advanced) {
     const result = await completeOrchestratorRun(context.advanced);
-    return mapOrchestratorResultToPipelineResult(result, params.storeName, context.persona);
+    return meter(context, mapOrchestratorResultToPipelineResult(result, params.storeName, context.persona));
   }
 
   // context.classic is always set when mode === "classic" — gatherAiReply
   // above is the only place AiReplyContext gets constructed.
-  return completeAiPipeline(context.classic!, params);
+  return meter(context, await completeAiPipeline(context.classic!, params));
+}
+
+/**
+ * Bumps the organization's monthly usage counter for a reply that actually
+ * spent provider tokens, then hands the result straight back.
+ *
+ * Intentionally NOT awaited. recordAiUsage never throws by contract, but it
+ * is still a write to usage_counters, and this function sits between the
+ * LLM answering and webhook.ts sending that answer to the customer — every
+ * millisecond spent here is a millisecond of extra silence on the shopper's
+ * screen for a number nobody reads in real time. Metering is allowed to
+ * land a moment late; the reply is not. The .catch is belt-and-braces so a
+ * contract violation can never become an unhandled rejection that takes the
+ * process down mid-conversation.
+ */
+function meter(context: AiReplyContext, result: AiPipelineResult): AiPipelineResult {
+  if (result.usage && context.organizationId) {
+    void recordAiUsage(context.organizationId, {
+      inputTokens: result.usage.inputTokens,
+      outputTokens: result.usage.outputTokens,
+      costMicroUsd: result.usage.costMicroUsd,
+    }).catch((err) => console.error("[aiRouter] recordAiUsage failed:", err));
+  }
+  return result;
 }

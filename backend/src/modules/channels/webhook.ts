@@ -6,6 +6,7 @@ import { asyncHandler } from "../../lib/asyncHandler";
 import { getAdapter } from "./adapters/registry";
 import { ChannelAdapter, NormalizedInboundMessage } from "./adapters/types";
 import { gatherAiReply, completeAiReply } from "../knowledge/aiRouter";
+import { aiResponseLogUsageFields } from "../knowledge/aiPipeline";
 import { createTicketFromConversation } from "../tickets/service";
 import { publish } from "./realtime";
 import { decryptSecret } from "../../lib/crypto";
@@ -129,6 +130,10 @@ async function processInboundMessages(
             messageId: aiMsg.id,
             confidenceLevel: result.confidenceLevel,
             actionTaken: result.confidenceLevel === "high" ? "answered" : "flagged_for_review",
+            // Per-reply token cost. Spreads to nothing when the reply came
+            // from the key-less fallback path, leaving the columns NULL
+            // rather than a 0 that would read as "this reply was free".
+            ...aiResponseLogUsageFields(result),
           },
         });
       }
@@ -150,6 +155,10 @@ async function processInboundMessages(
             conversationId: conversation.id,
             confidenceLevel: result.confidenceLevel,
             actionTaken: "escalated_to_human",
+            // An escalation still costs tokens whenever the model ran and
+            // then failed the confidence gate — only the quota-exceeded and
+            // paused paths reach here having spent nothing.
+            ...aiResponseLogUsageFields(result),
           },
         });
       }

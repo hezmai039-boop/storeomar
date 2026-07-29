@@ -67,14 +67,27 @@ analyticsRouter.get(
             where: { storeId: { in: storeIds }, createdAt: { gte: since } },
             _count: true,
           }),
+          // Cost rides along on the aggregate that already scans exactly
+          // these rows — a _sum on the same GROUP BY is free next to the
+          // _count. Adding a fourth query (or, worse, re-introducing a
+          // per-store loop) is what made this endpoint time out before; the
+          // constant-query-count property is the whole point of this shape.
           tx.aiResponseLog.groupBy({
             by: ["storeId", "actionTaken"],
             where: {
               storeId: { in: storeIds },
-              actionTaken: { in: ["answered", "escalated_to_human"] },
+              // "flagged_for_review" is included for COST only, not for the
+              // rates: a medium-confidence reply is logged under that action
+              // and still burned real provider tokens, so leaving it out
+              // would under-report spend on exactly the stores whose
+              // knowledge base is weakest. The rate maps below are populated
+              // per explicit actionTaken, so the reported percentages are
+              // byte-for-byte what they were before cost was added.
+              actionTaken: { in: ["answered", "escalated_to_human", "flagged_for_review"] },
               createdAt: { gte: since },
             },
             _count: true,
+            _sum: { costMicroUsd: true },
           }),
           tx.ticket.groupBy({
             by: ["storeId"],
@@ -86,32 +99,49 @@ analyticsRouter.get(
         const conversations = new Map<string, number>(convGroups.map((g) => [g.storeId, g._count]));
         const answered = new Map<string, number>();
         const escalated = new Map<string, number>();
+        const cost = new Map<string, number>();
         for (const g of logGroups) {
-          (g.actionTaken === "answered" ? answered : escalated).set(g.storeId, g._count);
+          if (g.actionTaken === "answered") answered.set(g.storeId, g._count);
+          else if (g.actionTaken === "escalated_to_human") escalated.set(g.storeId, g._count);
+          // Every action contributes to spend, so accumulate across all of
+          // this store's groups rather than overwriting per action.
+          cost.set(g.storeId, (cost.get(g.storeId) ?? 0) + Number(g._sum.costMicroUsd ?? 0));
         }
         const openTickets = new Map<string, number>(ticketGroups.map((g) => [g.storeId, g._count]));
-        return { conversations, answered, escalated, openTickets };
+        return { conversations, answered, escalated, openTickets, cost };
       },
       { timeoutMs: 20000 }
     );
 
+    const storeRows = stores.map((s) => {
+      const a = agg.answered.get(s.id) ?? 0;
+      const e = agg.escalated.get(s.id) ?? 0;
+      const handled = a + e;
+      return {
+        id: s.id,
+        name: s.name,
+        storeId: s.id,
+        totalConversations: agg.conversations.get(s.id) ?? 0,
+        aiResolvedRate: handled > 0 ? Math.round((a / handled) * 100) : 0,
+        escalationRate: handled > 0 ? Math.round((e / handled) * 100) : 0,
+        openTickets: agg.openTickets.get(s.id) ?? 0,
+        // Micro-USD, matching how it is stored (see lib/llmPricing.ts for
+        // why it is not dollars or cents). Deliberately NOT converted to a
+        // display unit here — the client formats it, so the API stays the
+        // exact integer that reconciles against the provider invoice.
+        // Number() guards the response: JSON.stringify throws outright on a
+        // BigInt, which would turn a reporting page into a 500.
+        costMicroUsd: Number(agg.cost.get(s.id) ?? 0),
+      };
+    });
+
     res.json({
       data: {
         range: req.query.range ?? "7d",
-        stores: stores.map((s) => {
-          const a = agg.answered.get(s.id) ?? 0;
-          const e = agg.escalated.get(s.id) ?? 0;
-          const handled = a + e;
-          return {
-            id: s.id,
-            name: s.name,
-            storeId: s.id,
-            totalConversations: agg.conversations.get(s.id) ?? 0,
-            aiResolvedRate: handled > 0 ? Math.round((a / handled) * 100) : 0,
-            escalationRate: handled > 0 ? Math.round((e / handled) * 100) : 0,
-            openTickets: agg.openTickets.get(s.id) ?? 0,
-          };
-        }),
+        stores: storeRows,
+        // Org-wide roll-up so the owner sees total AI spend for the range
+        // without the dashboard having to re-add the rows itself.
+        totals: { costMicroUsd: storeRows.reduce((sum, r) => sum + r.costMicroUsd, 0) },
       },
     });
   })

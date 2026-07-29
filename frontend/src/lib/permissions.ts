@@ -24,6 +24,8 @@ export const PERMISSIONS = {
   AI_INTELLIGENCE_VIEW: "ai_intelligence.view",
   AI_INTELLIGENCE_MANAGE: "ai_intelligence.manage",
   SIMULATION_MANAGE: "simulation.manage",
+  BILLING_VIEW: "billing.view",
+  BILLING_MANAGE: "billing.manage",
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -32,7 +34,11 @@ const ALL: PermissionKey[] = Object.values(PERMISSIONS);
 
 const ROLE_PERMISSIONS: Record<string, PermissionKey[]> = {
   owner: ALL,
-  store_manager: ALL,
+  // BILLING_MANAGE is the one thing a store_manager deliberately lacks: they
+  // ARE the paying client, and that permission is what marks a bank transfer
+  // as received — so granting it would let them approve their own invoice.
+  // They keep BILLING_VIEW (plan, quota, invoices, submit a transfer).
+  store_manager: ALL.filter((p) => p !== PERMISSIONS.BILLING_MANAGE),
   agent: [
     PERMISSIONS.CONVERSATIONS_VIEW,
     PERMISSIONS.CONVERSATIONS_REPLY,
