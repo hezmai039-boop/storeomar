@@ -12,6 +12,7 @@ import { signToken } from "../../middleware/auth";
 import { accessibleStoreIdsFor } from "../../middleware/rbac";
 import { writeAudit } from "../../lib/audit";
 import { ROLES } from "../../lib/permissions";
+import { env } from "../../config/env";
 import { consumeToken, issueToken, TOKEN_TTL_MINUTES } from "../../lib/authTokens";
 import { sendEmail } from "../../lib/email/registry";
 import { passwordResetEmail, passwordResetLink, verificationEmail, verificationLink } from "../../lib/email/templates";
@@ -322,6 +323,15 @@ async function sendVerificationEmail(user: { id: string; name: string; email: st
 identityRouter.post(
   "/auth/signup",
   asyncHandler(async (req, res) => {
+    // Checked before parsing the body, let alone touching the database: when
+    // signup is closed this endpoint must cost an attacker nothing. Every
+    // organization created here gets a free-plan allowance of real Anthropic
+    // calls on the platform's own key, so an open endpoint is a spend
+    // primitive, not just an unwanted row. See env.signupEnabled.
+    if (!env.signupEnabled) {
+      throw new ApiError(403, "SIGNUP_DISABLED", "التسجيل الذاتي مغلق حاليًا — تواصل معنا لفتح حساب");
+    }
+
     const body = signupSchema.parse(req.body);
 
     // Preflight before anything is written, so the common failure (email

@@ -1,10 +1,12 @@
 import { FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { usePublicConfig } from "../lib/publicConfig";
 import "./LoginPage.css";
 
 export function LoginPage() {
   const { login, error } = useAuth();
+  const { signupEnabled } = usePublicConfig();
   // Was prefilled with the platform owner's address as a dev convenience.
   // Harmless while the only way in was an account we created by hand —
   // but signup is public now, so that prefill hands the owner's email to
@@ -59,9 +61,11 @@ export function LoginPage() {
           <div>
             <Link to="/forgot-password">نسيت كلمة المرور؟</Link>
           </div>
-          <div>
-            ليس لديك حساب؟ <Link to="/signup">إنشاء حساب جديد</Link>
-          </div>
+          {signupEnabled && (
+            <div>
+              ليس لديك حساب؟ <Link to="/signup">إنشاء حساب جديد</Link>
+            </div>
+          )}
           <div style={{ opacity: 0.7 }}>Atlas · منصة إدارة خدمة العملاء متعددة المتاجر</div>
         </div>
       </form>

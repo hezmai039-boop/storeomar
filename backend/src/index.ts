@@ -53,6 +53,16 @@ app.use("/v1/auth/reset-password", authRateLimiter);
 // process. This is what Render's health check should point at.
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
 
+// Public runtime flags the SPA needs BEFORE anyone is logged in — it has no
+// build-time knowledge of how this deployment is configured, and a signup
+// link that only fails on submit is worse than no link at all.
+//
+// Only ever expose flags that are already observable from outside: whether
+// signup is open is something anyone can discover by POSTing to it. This
+// endpoint must never grow a value that isn't (keys, provider names, limits
+// that reveal internal capacity).
+app.get("/v1/public/config", (_req, res) => res.json({ data: { signupEnabled: env.signupEnabled } }));
+
 // Readiness — "can it actually serve traffic?". Pings the DB with a trivial
 // query. Use this for uptime monitoring / pre-traffic gating, NOT for
 // liveness (a transient DB blip returning 503 here must not restart the app).

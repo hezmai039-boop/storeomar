@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, ApiClientError, setAuthToken } from "../api/client";
 import { useAuth } from "../context/AuthContext";
+import { usePublicConfig } from "../lib/publicConfig";
 import "./LoginPage.css";
 
 interface SignupResponse {
@@ -27,6 +28,7 @@ interface SignupResponse {
 export function SignupPage() {
   const { refreshMe } = useAuth();
   const navigate = useNavigate();
+  const { signupEnabled } = usePublicConfig();
 
   const [form, setForm] = useState({
     organizationName: "",
@@ -78,6 +80,30 @@ export function SignupPage() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  // Someone arriving on a direct link while signup is closed gets told so,
+  // rather than filling in six fields to be refused on submit.
+  if (!signupEnabled) {
+    return (
+      <div dir="rtl" lang="ar" className="login-page">
+        <span className="login-blob b1" />
+        <span className="login-blob b2" />
+
+        <div className="login-card atlas-enter">
+          <div className="login-mark">A</div>
+          <div>
+            <div className="login-title">التسجيل مغلق حاليًا</div>
+            <div className="login-sub">
+              نفتح الحسابات الجديدة على دفعات. تواصل معنا وسنُنشئ لك حسابًا.
+            </div>
+          </div>
+          <Link className="btn btn-primary login-submit" to="/login" style={{ textAlign: "center" }}>
+            تسجيل الدخول
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   return (

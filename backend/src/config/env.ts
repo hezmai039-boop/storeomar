@@ -74,4 +74,19 @@ export const env = {
   // mismatch fails the exchange with an opaque `invalid_grant` rather than a
   // useful error.
   oauthRedirectBase: process.env.OAUTH_REDIRECT_BASE ?? "http://localhost:4000",
+
+  // Public self-serve signup. CLOSED unless explicitly opened — note this is
+  // `=== "true"`, not `!== "false"`, so the safe state is what you get by
+  // forgetting to set it.
+  //
+  // The asymmetry is deliberate and it is about money: every organization
+  // created here starts on the free plan with a monthly allowance of real
+  // Anthropic calls, billed to the platform's own API key. Signup is public
+  // and unauthenticated, so an open endpoint lets anyone mint accounts in a
+  // loop and spend that budget. Forgetting to open signup costs a support
+  // message; forgetting to close it costs an invoice.
+  //
+  // Flip SIGNUP_ENABLED=true when there is a reason to accept strangers —
+  // it is an env var, so opening or closing it is a restart, not a deploy.
+  signupEnabled: process.env.SIGNUP_ENABLED === "true",
 };
