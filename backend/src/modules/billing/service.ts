@@ -41,7 +41,12 @@ export async function getEffectivePlan(organizationId: string): Promise<Plan> {
     where: { organizationId },
     include: { plan: true },
   });
-  if (subscription && ENTITLED_STATUSES.includes(subscription.status)) return subscription.plan;
+  // Status alone is not enough. The `manual` provider cannot charge a card,
+  // so nothing renews a lapsed subscription automatically and no job flips
+  // it out of "active" — without this check an org that paid for one month
+  // would keep the paid plan's quotas forever.
+  const lapsed = !!subscription && subscription.currentPeriodEnd.getTime() < Date.now();
+  if (subscription && !lapsed && ENTITLED_STATUSES.includes(subscription.status)) return subscription.plan;
 
   const free = await prisma.plan.findUnique({ where: { key: "free" } });
   if (!free) {

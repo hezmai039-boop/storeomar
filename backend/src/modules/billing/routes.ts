@@ -5,8 +5,9 @@ import { prisma } from "../../db/prisma";
 import { asyncHandler } from "../../lib/asyncHandler";
 import { ApiError } from "../../lib/errors";
 import { authenticate } from "../../middleware/auth";
-import { requireOwner, requirePlatformAdmin } from "../../middleware/rbac";
+import { requireOwner, requireOrgPermission, requirePlatformAdmin } from "../../middleware/rbac";
 import { writeAudit } from "../../lib/audit";
+import { PERMISSIONS } from "../../lib/permissions";
 import { getPaymentProvider } from "./adapters/registry";
 import { currentPeriod, getUsageSummary } from "./service";
 
@@ -129,6 +130,7 @@ billingRouter.get(
 // how many AI replies are left without being able to change the plan).
 billingRouter.get(
   "/subscription",
+  requireOrgPermission(PERMISSIONS.BILLING_VIEW),
   asyncHandler(async (req, res) => {
     const organizationId = req.auth!.organizationId;
     const subscription = await prisma.subscription.findUnique({
@@ -145,6 +147,7 @@ billingRouter.get(
 // way to ask for someone else's.
 billingRouter.get(
   "/invoices",
+  requireOrgPermission(PERMISSIONS.BILLING_VIEW),
   asyncHandler(async (req, res) => {
     const invoices = await prisma.invoice.findMany({
       where: { organizationId: req.auth!.organizationId },
@@ -168,6 +171,13 @@ billingRouter.post(
 
     const plan = await prisma.plan.findUnique({ where: { key: body.planKey } });
     if (!plan || !plan.isActive) throw ApiError.notFound("الباقة");
+
+    // The plan a subscription sits on until a payment is approved. Looked up
+    // rather than assumed so that a paid subscribe cannot accidentally leave
+    // planId pointing at the plan being purchased — see the upsert below.
+    const freePlan = await prisma.plan.findUnique({ where: { key: "free" } });
+    if (!freePlan) throw new Error('Billing misconfigured: no plan with key "free" exists (run prisma/seed.ts)');
+    const freePlanId = freePlan.id;
 
     const organization = await prisma.organization.findUniqueOrThrow({ where: { id: organizationId } });
     const existing = await prisma.subscription.findUnique({ where: { organizationId } });
@@ -206,23 +216,29 @@ billingRouter.post(
         where: { organizationId },
         create: {
           organizationId,
-          planId: plan.id,
-          // A brand-new subscription starts as "trialing": the plan's
-          // limits apply immediately so the customer can actually use what
-          // they just picked, and only an approved payment flips it to
-          // "active" with a real paid period.
+          // NOT `plan.id` for a paid plan. Entitlement is computed from
+          // subscription.planId (getEffectivePlan), so writing the
+          // requested plan here would hand out its quotas the instant the
+          // customer clicks "subscribe" — before any money moves. The
+          // requested plan lives on the invoice until approval.
+          planId: isFree ? plan.id : freePlanId,
           status: "trialing",
           provider: BILLING_PROVIDER,
           currentPeriodStart: now,
           currentPeriodEnd: periodEnd,
         },
         update: {
-          planId: plan.id,
-          // Downgrading to free is the one status change we can make
-          // without money changing hands. For a paid plan the existing
-          // status is preserved — POST /admin/invoices/:id/approve is the
-          // only thing allowed to mark an org "active".
-          ...(isFree ? { status: "trialing", currentPeriodStart: now, currentPeriodEnd: periodEnd } : {}),
+          // Same rule on the update path, and this is where the hole was:
+          // status was guarded but planId was not, so any owner could POST
+          // {"planKey":"pro"}, never pay, and keep a `trialing` status that
+          // getEffectivePlan treats as entitled — unlimited stores and 200x
+          // the AI-reply allowance, billed to the platform's own Anthropic
+          // key. Downgrading to free is the one move that needs no money,
+          // so it is the only one applied here. Everything upward goes
+          // through POST /admin/invoices/:id/approve.
+          ...(isFree
+            ? { planId: plan.id, status: "trialing", currentPeriodStart: now, currentPeriodEnd: periodEnd }
+            : {}),
           provider: BILLING_PROVIDER,
         },
         include: { plan: true },
@@ -287,7 +303,18 @@ billingRouter.post(
 
 const transferSchema = z.object({
   transferRef: z.string().min(1, "أدخل الرقم المرجعي للتحويل"),
-  receiptUrl: z.string().url("رابط الإيصال غير صالح").optional(),
+  // .url() alone is not enough: it is backed by `new URL()`, which happily
+  // accepts `javascript:alert(1)`. Nothing renders this value as a link
+  // today, so there is no live XSS — but the obvious next feature is an
+  // admin review queue showing `<a href={invoice.receiptUrl}>`, and the
+  // person clicking it would be the platform admin, i.e. the one account
+  // that can approve invoices. Constrain the scheme now, while it costs a
+  // line, rather than after that page exists.
+  receiptUrl: z
+    .string()
+    .url("رابط الإيصال غير صالح")
+    .refine((u) => /^https?:\/\//i.test(u), "رابط الإيصال يجب أن يبدأ بـ http أو https")
+    .optional(),
 });
 
 // POST /v1/billing/invoices/:id/transfer — the customer declares "I sent the

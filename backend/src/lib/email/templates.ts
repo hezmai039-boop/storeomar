@@ -29,9 +29,31 @@ export function passwordResetLink(token: string): string {
   return `${env.appUrl.replace(/\/+$/, "")}/reset-password?token=${encodeURIComponent(token)}`;
 }
 
+/**
+ * Every value interpolated into the HTML below passes through here.
+ *
+ * The paragraphs are not static copy — they embed `User.name`, which comes
+ * straight from the public signup body with no character restriction. An
+ * attacker can therefore sign up with a *victim's* email address and a name
+ * of `<a href="https://evil.example">فعّل حسابك</a>`, and the platform will
+ * mail that victim an attacker-authored link inside a genuine Atlas
+ * template, from Atlas's own SPF/DKIM-valid domain. That is a far better
+ * phishing primitive than anything the attacker could send themselves.
+ *
+ * The `text` variants need no escaping — they are never parsed as markup.
+ */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function layout(params: { heading: string; paragraphs: string[]; buttonLabel: string; link: string; footer: string }): string {
   const body = params.paragraphs
-    .map((p) => `<p style="margin:0 0 16px;font-size:15px;line-height:1.9;color:#334155;">${p}</p>`)
+    .map((p) => `<p style="margin:0 0 16px;font-size:15px;line-height:1.9;color:#334155;">${escapeHtml(p)}</p>`)
     .join("");
 
   return `<div dir="rtl" lang="ar" style="background:#f8fafc;padding:24px 0;font-family:'Segoe UI',Tahoma,Arial,sans-serif;">
@@ -39,10 +61,10 @@ function layout(params: { heading: string; paragraphs: string[]; buttonLabel: st
     <tr>
       <td dir="rtl" align="right" style="padding:32px;text-align:right;">
         <div style="font-size:20px;font-weight:700;color:${BRAND_COLOR};margin-bottom:24px;">${BRAND}</div>
-        <h1 style="margin:0 0 16px;font-size:19px;color:#0f172a;">${params.heading}</h1>
+        <h1 style="margin:0 0 16px;font-size:19px;color:#0f172a;">${escapeHtml(params.heading)}</h1>
         ${body}
         <div style="margin:28px 0;">
-          <a href="${params.link}" style="display:inline-block;background:${BRAND_COLOR};color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:15px;font-weight:600;">${params.buttonLabel}</a>
+          <a href="${escapeHtml(params.link)}" style="display:inline-block;background:${BRAND_COLOR};color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:15px;font-weight:600;">${escapeHtml(params.buttonLabel)}</a>
         </div>
         <p style="margin:0 0 8px;font-size:13px;color:#64748b;line-height:1.8;">
           إذا لم يعمل الزر، انسخ الرابط التالي والصقه في المتصفح:
@@ -50,9 +72,9 @@ function layout(params: { heading: string; paragraphs: string[]; buttonLabel: st
         <!-- dir="ltr" on the URL itself: an RTL container reorders a bare
              URL's slashes and query string on screen, and the customer
              copies a broken link. -->
-        <p dir="ltr" style="margin:0 0 24px;font-size:12px;color:#0f766e;word-break:break-all;text-align:left;">${params.link}</p>
+        <p dir="ltr" style="margin:0 0 24px;font-size:12px;color:#0f766e;word-break:break-all;text-align:left;">${escapeHtml(params.link)}</p>
         <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0;" />
-        <p style="margin:0;font-size:12px;color:#94a3b8;line-height:1.8;">${params.footer}</p>
+        <p style="margin:0;font-size:12px;color:#94a3b8;line-height:1.8;">${escapeHtml(params.footer)}</p>
       </td>
     </tr>
   </table>

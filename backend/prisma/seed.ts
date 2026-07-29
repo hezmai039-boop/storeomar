@@ -420,10 +420,25 @@ async function main() {
     planByKey.set(def.key, plan);
   }
 
-  // The platform operator — the only account allowed to confirm that a bank
-  // transfer actually arrived (src/middleware/rbac.ts requirePlatformAdmin).
-  // No API route sets this flag; it is granted here, deliberately, once.
-  await prisma.user.update({ where: { id: owner.id }, data: { isPlatformAdmin: true } });
+  // NOT granted here. isPlatformAdmin is the only cross-tenant power in the
+  // codebase — GET /v1/billing/admin/invoices reads EVERY organization's
+  // invoices, and approve marks them paid — and this seed creates its owner
+  // with a password that is committed in this repository and printed below.
+  // Granting the flag here means anyone who has read the repo holds
+  // cross-tenant billing access on any deployment that was ever seeded.
+  //
+  // Opt in explicitly instead, per the flag's comment in schema.prisma:
+  //
+  //   SEED_PLATFORM_ADMIN=true npm run seed     (dev only)
+  //
+  // or, on a real deployment, by hand against the intended account after
+  // its password has been changed:
+  //
+  //   UPDATE users SET is_platform_admin = true WHERE email = '...';
+  if (process.env.SEED_PLATFORM_ADMIN === "true") {
+    await prisma.user.update({ where: { id: owner.id }, data: { isPlatformAdmin: true } });
+    console.log("⚠️  Granted isPlatformAdmin to the seeded owner (SEED_PLATFORM_ADMIN=true). Do not do this in production.");
+  }
 
   // Every org starts on `free` so nothing in the app has to handle a null
   // subscription — getEffectivePlan() falls back to `free` anyway, but a real
