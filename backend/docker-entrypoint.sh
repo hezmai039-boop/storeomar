@@ -1,8 +1,26 @@
 #!/bin/sh
 set -e
 
-echo "Pushing Prisma schema..."
-npx prisma db push --skip-generate
+# migrate deploy, NOT db push. db push reconciles the database to the schema
+# by any means available, including dropping — a column rename is a drop plus
+# a create, so it can silently erase production data with no record of what
+# was applied. prisma/migrations/ exists precisely to stop that, and it was
+# dead code until this line changed: the container ran db push regardless, so
+# _prisma_migrations never advanced. See docs/30-migrations.md.
+#
+# An existing database built by db push needs `npm run prisma:baseline` once,
+# by hand, before the first deploy that runs this.
+echo "Applying database migrations..."
+npx prisma migrate deploy
+
+# Reference data — roles, permissions, channel types, BILLING PLANS — is not
+# demo data and production cannot run without it. It used to live inside the
+# demo seed below, which the real service deliberately skips, so a production
+# deploy had an empty `plans` table: getEffectivePlan() throws, checkQuota()
+# runs on every inbound message with no try/catch, and every channel webhook
+# returns 500. Runs unconditionally, and every write in it is an upsert.
+echo "Seeding reference data (roles, permissions, channel types, plans)..."
+npx tsx prisma/seed-reference.ts
 
 echo "Applying row-level security policies..."
 npx tsx prisma/apply-rls.ts

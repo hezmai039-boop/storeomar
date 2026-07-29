@@ -5,7 +5,7 @@ import { asyncHandler } from "../../lib/asyncHandler";
 import { ApiError } from "../../lib/errors";
 import { authenticate } from "../../middleware/auth";
 import { requirePermission, requireStoreAccess } from "../../middleware/rbac";
-import { PERMISSIONS } from "../../lib/permissions";
+import { PERMISSIONS, QUOTA_KEYS } from "../../lib/permissions";
 import { writeAudit } from "../../lib/audit";
 import { buildPageMeta, decodeCursor } from "../../lib/pagination";
 import { createTicketFromConversation } from "../tickets/service";
@@ -13,7 +13,7 @@ import { ensureDefaultSpecialists } from "./specialists";
 import { listToolCatalog } from "./tools/registry";
 import { gatherOrchestratorContext, completeOrchestratorRun } from "./orchestrator";
 import { getCustomerMemory } from "./memory";
-import { recordAiUsage } from "../billing/service";
+import { recordAiUsage, checkQuota } from "../billing/service";
 
 export const aiIntelligenceRouter = Router({ mergeParams: true });
 aiIntelligenceRouter.use(authenticate, requireStoreAccess());
@@ -128,6 +128,21 @@ aiIntelligenceRouter.post(
         question: body.question,
       })
     );
+
+    // Same quota gate the live message paths enforce in aiRouter. This route
+    // drives the orchestrator directly, so it inherited none of it: an
+    // organization past its monthly limit could keep running the full
+    // multi-round tool loop from the dashboard, spending the platform's
+    // Anthropic budget on exactly the account that has already exhausted
+    // what it pays for. Refused before the network call, not after.
+    const quota = await checkQuota(conversation.store.organizationId, QUOTA_KEYS.AI_REPLIES_MONTHLY);
+    if (!quota.allowed) {
+      throw new ApiError(403, "PLAN_QUOTA_EXCEEDED", "تجاوزت الحد الشهري للردود الآلية في باقتك الحالية", {
+        quota: QUOTA_KEYS.AI_REPLIES_MONTHLY,
+        used: quota.used,
+        limit: quota.limit,
+      });
+    }
 
     // Phase 2 (network, no transaction open) — the tool-calling agent loop.
     const result = await completeOrchestratorRun(context);

@@ -155,10 +155,14 @@ async function processInboundMessages(
             conversationId: conversation.id,
             confidenceLevel: result.confidenceLevel,
             actionTaken: "escalated_to_human",
-            // An escalation still costs tokens whenever the model ran and
-            // then failed the confidence gate — only the quota-exceeded and
-            // paused paths reach here having spent nothing.
-            ...aiResponseLogUsageFields(result),
+            // Usage goes on the message row only. Phase 4 writes TWO rows
+            // when a reply both answers and escalates — the normal shape on
+            // the advanced path, where an escalation still carries an
+            // acknowledgment — and the analytics report sums answered +
+            // flagged_for_review + escalated_to_human. Spreading the run's
+            // usage onto both rows double-counted the cost of exactly the
+            // most expensive conversations.
+            ...(aiMsgId ? {} : aiResponseLogUsageFields(result)),
           },
         });
       }

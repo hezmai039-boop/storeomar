@@ -247,6 +247,25 @@ billingRouter.post(
       let invoice = null;
       if (!isFree) {
         const number = await nextInvoiceNumber(tx, currentPeriod(now).slice(0, 4));
+
+        // Re-check INSIDE the transaction, after nextInvoiceNumber has taken
+        // the advisory lock. The idempotency lookup near the top of this
+        // handler runs unlocked, so two concurrent subscribes both saw "no
+        // open invoice" and both created one — reproduced: 8 concurrent
+        // requests committed 8 invoices, each carrying its own mandatory
+        // transfer reference, because the lock only made their NUMBERS
+        // distinct. Serialised here, this second look sees whatever the
+        // other request just committed.
+        const raced = await tx.invoice.findFirst({
+          where: { organizationId, planId: plan.id, status: { in: UNPAID_STATUSES } },
+          orderBy: { createdAt: "desc" },
+        });
+        if (raced && currentPeriod(raced.periodStart) === currentPeriod(now)) {
+          // Adopt the invoice the other request just created rather than
+          // returning early, so the audit row below is still written and the
+          // response shape stays identical either way.
+          invoice = raced;
+        } else {
         invoice = await tx.invoice.create({
           data: {
             organizationId,
@@ -261,6 +280,7 @@ billingRouter.post(
             periodEnd,
           },
         });
+        }
       }
 
       await writeAudit(tx, {
@@ -398,7 +418,18 @@ billingRouter.post(
     if (invoice.status === "paid") throw ApiError.conflict("هذه الفاتورة معتمدة بالفعل");
 
     const now = new Date();
-    const periodEnd = periodEndFor(now, invoice.plan.interval);
+
+    // Extend from the end of the period already paid for, not from today.
+    // Approving from `now` destroys whatever was left: a customer whose
+    // month runs to Aug 1, transferring on Jul 25 and approved on Jul 26,
+    // used to end up with Aug 26 — six paid days deleted. It compounds when
+    // two invoices are approved back to back, so paying for two months
+    // bought one. Falls back to `now` when the previous period has already
+    // lapsed, which is the genuine restart case.
+    const existingSub = await prisma.subscription.findUnique({ where: { organizationId: invoice.organizationId } });
+    const periodStart =
+      existingSub && existingSub.currentPeriodEnd > now ? existingSub.currentPeriodEnd : now;
+    const periodEnd = periodEndFor(periodStart, invoice.plan.interval);
 
     const result = await prisma.$transaction(async (tx) => {
       const paid = await tx.invoice.update({
@@ -413,7 +444,7 @@ billingRouter.post(
           planId: invoice.planId,
           status: "active",
           provider: invoice.provider,
-          currentPeriodStart: now,
+          currentPeriodStart: periodStart,
           currentPeriodEnd: periodEnd,
         },
         update: {
@@ -422,7 +453,7 @@ billingRouter.post(
           // customer is entitled to.
           planId: invoice.planId,
           status: "active",
-          currentPeriodStart: now,
+          currentPeriodStart: periodStart,
           currentPeriodEnd: periodEnd,
           canceledAt: null,
         },

@@ -210,21 +210,35 @@ export async function runAgentWithTools(params: {
   ];
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const resp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 700,
-        system: params.systemPrompt,
-        tools: anthropicTools,
-        messages,
-      }),
-    });
+    // The fetch and the body parse are both inside the try. Only an HTTP
+    // error response was handled before, so a socket reset, DNS failure or
+    // truncated body on round 3 rejected straight out of this function —
+    // discarding the usage already accumulated from rounds 1 and 2, which
+    // was real spend, and rejecting up through completeAiReply into webhook
+    // Phase 3, which has no try/catch, so the channel got a 500 and the
+    // platform started retrying. Both outcomes are worse than answering
+    // nothing: return what the run cost and let the caller escalate.
+    let resp: Response;
+    try {
+      resp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": ANTHROPIC_API_KEY,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          max_tokens: 700,
+          system: params.systemPrompt,
+          tools: anthropicTools,
+          messages,
+        }),
+      });
+    } catch (err) {
+      console.error(`Anthropic transport error (agent runtime): ${(err as Error).message}`);
+      return { replyText: null, toolCalls, usage, model: MODEL, roundTrips };
+    }
 
     roundTrips++;
 
@@ -236,7 +250,13 @@ export async function runAgentWithTools(params: {
       return { replyText: null, toolCalls, usage, model: MODEL, roundTrips };
     }
 
-    const json = (await resp.json()) as { content: AnthropicContentBlock[] };
+    let json: { content: AnthropicContentBlock[] };
+    try {
+      json = (await resp.json()) as { content: AnthropicContentBlock[] };
+    } catch (err) {
+      console.error(`Anthropic response parse failed (agent runtime): ${(err as Error).message}`);
+      return { replyText: null, toolCalls, usage, model: MODEL, roundTrips };
+    }
 
     // Metered immediately, before any branch below can return: every exit
     // path from this round onwards has already been paid for, so none of
