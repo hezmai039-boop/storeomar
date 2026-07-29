@@ -22,6 +22,17 @@ export function mapOrchestratorResultToPipelineResult(
     escalationReason: result.escalate
       ? "ثقة منخفضة من طبقة الذكاء الاصطناعي المتقدمة — لا نتيجة مؤكدة من الأدوات أو قاعدة المعرفة"
       : undefined,
+    // The advanced engine's cost, already summed across its whole tool loop
+    // and priced by completeOrchestratorRun, lands on the SAME field the
+    // classic path populates. That is the entire integration: everything
+    // downstream (aiResponseLogUsageFields in webhook.ts and
+    // simulation/publicRoutes.ts, and meter() below) already reads
+    // AiPipelineResult.usage and needs no knowledge of which engine ran.
+    //
+    // Passed through as-is, including `undefined`: a run that spent nothing
+    // knowable must leave the nullable ai_response_logs columns NULL rather
+    // than writing a 0 that would read as "this expensive engine is free".
+    usage: result.usage,
   };
 }
 

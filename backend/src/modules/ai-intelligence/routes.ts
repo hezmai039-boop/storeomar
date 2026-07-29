@@ -13,6 +13,7 @@ import { ensureDefaultSpecialists } from "./specialists";
 import { listToolCatalog } from "./tools/registry";
 import { gatherOrchestratorContext, completeOrchestratorRun } from "./orchestrator";
 import { getCustomerMemory } from "./memory";
+import { recordAiUsage } from "../billing/service";
 
 export const aiIntelligenceRouter = Router({ mergeParams: true });
 aiIntelligenceRouter.use(authenticate, requireStoreAccess());
@@ -130,6 +131,23 @@ aiIntelligenceRouter.post(
 
     // Phase 2 (network, no transaction open) — the tool-calling agent loop.
     const result = await completeOrchestratorRun(context);
+
+    // This route drives the orchestrator directly instead of going through
+    // aiRouter, so it does not inherit aiRouter's metering — and a tool loop
+    // run from here costs exactly what one run from a live customer message
+    // costs. Left unmetered, an owner testing the advanced engine from the
+    // dashboard spends the platform's Anthropic budget invisibly, and the
+    // per-store cost report understates precisely the stores experimenting
+    // most. Fire-and-forget with a catch, matching aiRouter: recordAiUsage
+    // is contractually non-throwing, and metering must never delay or fail
+    // the answer it is measuring.
+    if (result.usage) {
+      void recordAiUsage(conversation.store.organizationId, {
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+        costMicroUsd: result.usage.costMicroUsd,
+      }).catch(() => {});
+    }
 
     // Phase 3 (short transaction) — auto-escalate to a ticket if the
     // agent didn't already do so itself via the CreateEscalationTicket

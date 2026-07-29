@@ -13,7 +13,13 @@ process.env.STORAGE_LOCAL_DIR = SCRATCH;
 delete process.env.STORAGE_PROVIDER;
 delete process.env.SENTRY_DSN;
 
-import { buildStorageKey, getStorageProvider, sanitizeFilename, storageKeyPrefix } from "../storage/registry";
+import {
+  buildStorageKey,
+  contentTypeForFile,
+  getStorageProvider,
+  sanitizeFilename,
+  storageKeyPrefix,
+} from "../storage/registry";
 import { localStorageProvider } from "../storage/local";
 import { captureError } from "../observability";
 
@@ -91,6 +97,58 @@ test("local provider delete is idempotent", async () => {
 
 test("local provider refuses a key that escapes its root", async () => {
   await assert.rejects(() => localStorageProvider.get("../../../../etc/passwd"));
+});
+
+// --- the knowledge upload path, as modules/knowledge/routes.ts drives it ----
+// These exercise the exact sequence the route performs — build a key from the
+// multipart filename, put through the *registry-resolved* provider, read it
+// back by the key persisted in knowledge_sources.file_url — because the bug
+// this module was written for was not a broken provider, it was a correct
+// provider nobody called.
+
+test("an upload round-trips through the resolved provider using only the persisted key", async () => {
+  delete process.env.STORAGE_PROVIDER;
+  const provider = getStorageProvider();
+
+  // Arabic filename with a space, which is what a real store actually uploads.
+  const originalname = "سياسة الاستبدال.pdf";
+  const body = Buffer.from("%PDF-1.4 محتوى الملف", "utf8");
+  const key = buildStorageKey("store-a", originalname);
+
+  await provider.put({ key, body, contentType: contentTypeForFile(originalname, "application/pdf") });
+
+  // The route stores `key`, not the returned url; a later request has nothing
+  // else to go on, so the key alone must be enough to fetch the bytes back.
+  const fetched = await getStorageProvider().get(key);
+  assert.ok(fetched, "the download route must be able to resolve the persisted key");
+  assert.equal(Buffer.compare(fetched, body), 0);
+});
+
+test("the download route can tell a new storage key from a legacy file_url", () => {
+  // No migration distinguishes the two generations of values in this column,
+  // so the route matches on this prefix. If buildStorageKey's layout ever
+  // changes, this is the assertion that catches the download route silently
+  // treating every new key as a legacy path.
+  const key = buildStorageKey("store-a", "policy.pdf");
+  assert.ok(key.startsWith(storageKeyPrefix("store-a")));
+  // The old writer's shape: `<storeId>/<uuid>.<ext>`, no "stores/" prefix.
+  assert.equal("store-a/9f1c-4b.pdf".startsWith(storageKeyPrefix("store-a")), false);
+});
+
+test("a key whose upload never completed reads back as null, not a throw", async () => {
+  // The route leaves file_url null when put() fails, but a row can still point
+  // at an object destroyed by a container restart. Both must reach the route
+  // as a plain null so it can answer 404 "الملف غير متوفر" instead of a 500.
+  const key = buildStorageKey("store-a", "never-stored.docx");
+  assert.equal(await getStorageProvider().get(key), null);
+});
+
+test("contentTypeForFile keeps multer's declared mime and falls back by extension", () => {
+  // The route passes file.mimetype through, which validateMimeMatchesType has
+  // already checked against the declared source type.
+  assert.equal(contentTypeForFile("policy.pdf", "application/pdf"), "application/pdf");
+  assert.equal(contentTypeForFile("policy.pdf"), "application/pdf");
+  assert.equal(contentTypeForFile("catalog.bin"), "application/octet-stream");
 });
 
 test("getStorageProvider defaults to local when STORAGE_PROVIDER is unset", () => {

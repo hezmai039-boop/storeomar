@@ -7,6 +7,13 @@ import { getTool } from "./tools/registry";
 import { runAgentWithTools, AgentToolCall } from "./agentRuntime";
 import { refreshConversationMemory } from "./memory";
 import { hybridSearchKnowledge } from "./hybridSearch";
+import { costMicroUsd } from "../../lib/llmPricing";
+// Type-only (erased at compile time, so no runtime cycle with aiRouter).
+// Reusing the classic path's shape rather than declaring a parallel one is
+// deliberate: aiRouter can then assign it straight onto
+// AiPipelineResult.usage with no translation step to drift out of sync,
+// and there stays exactly one definition of "what a reply cost".
+import type { AiReplyUsage } from "../knowledge/aiPipeline";
 
 export type OrchestratorConfidence = "high" | "medium" | "low";
 
@@ -27,6 +34,19 @@ export interface OrchestratorResult {
   confidence: OrchestratorConfidence;
   escalate: boolean;
   toolCalls: AgentToolCall[];
+  /**
+   * What this whole run cost, summed over all of its tool-loop round-trips
+   * and priced here (where the model id is known) exactly like the classic
+   * path prices in completeAiPipeline.
+   *
+   * Optional, and absent rather than zeroed whenever the provider never
+   * reported anything usable — no API key, a failure before the first
+   * response, or a malformed usage block. Absent ≠ zero: "this reply was
+   * free" and "we don't know what it cost" are different facts when
+   * reporting per-store margin, which is why the matching ai_response_logs
+   * columns are nullable.
+   */
+  usage?: AiReplyUsage;
 }
 
 /**
@@ -204,5 +224,30 @@ export async function completeOrchestratorRun(context: OrchestratorContext): Pro
 
   await logOrchestratorRun(context, result.replyText, confidence, escalate);
 
-  return { replyText: result.replyText, confidence, escalate, toolCalls: result.toolCalls };
+  // Priced here, at the call site, because this is the only place the model
+  // id that produced these tokens is known — a later job reading the logs
+  // could not re-derive which rate applied. Reuses lib/llmPricing's single
+  // table (never a second copy of the rates), and costMicroUsd is
+  // contractually non-throwing, so metering cannot break a customer reply.
+  //
+  // `result.usage` is the sum over every round-trip of the tool loop, not
+  // just the final answer's turn: the loop re-sends a growing transcript
+  // each round, so pricing only the last turn would understate exactly the
+  // conversations that cost the most.
+  //
+  // NOTE: there is deliberately no per-turn breakdown persisted.
+  // ai_orchestrator_runs and ai_tool_invocations have no token/cost columns
+  // today, and prisma/schema.prisma is not ours to change — the run total
+  // rides out on the reply's ai_response_logs row instead, which is what
+  // billing and margin reporting already read.
+  const usage: AiReplyUsage | undefined = result.usage
+    ? {
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+        costMicroUsd: costMicroUsd(result.model, result.usage),
+        model: result.model,
+      }
+    : undefined;
+
+  return { replyText: result.replyText, confidence, escalate, toolCalls: result.toolCalls, usage };
 }

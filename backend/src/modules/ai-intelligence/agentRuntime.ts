@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ToolDefinition } from "./tools/types";
+import type { TokenUsage } from "../../lib/llmPricing";
 
 // Same pluggable-LLM philosophy as src/lib/llm.ts: no key configured ->
 // every function here returns a "no answer" result, and callers fall back
@@ -87,9 +88,91 @@ export interface AgentToolCall {
   result: unknown;
 }
 
+// ------------------------------------------------------------------
+// Usage metering for the tool loop.
+//
+// The single-shot path (src/lib/llm.ts) has always surfaced the provider's
+// `usage` block; this loop used to throw it away, which made the ADVANCED
+// engine — the expensive one, by construction — the only unmetered spend in
+// the platform. A store on "الذكاء المتقدم" was therefore billed below its
+// real cost, and the platform could not see its margin on precisely the
+// customers costing it the most.
+// ------------------------------------------------------------------
+
+function isTokenCount(value: unknown): value is number {
+  // Number.isFinite rather than a bare `typeof === "number"` because a NaN
+  // admitted here poisons the WHOLE run's accumulated total, not just its
+  // own turn. An unknown cost is recoverable (the column stays NULL and the
+  // gap is visible); a silently wrong one is not.
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+/**
+ * Reads one round-trip's `usage` block out of a raw Anthropic response.
+ *
+ * Defensive by contract, exactly like lib/llm.ts: metering is best-effort,
+ * answering the customer is not. A response we can still read text or
+ * tool_use blocks from, but whose usage block is missing or malformed, must
+ * yield `null` — never an exception on the reply path.
+ *
+ * Exported for the unit tests (same reason zodToJsonSchema is).
+ */
+export function readTurnUsage(json: unknown): TokenUsage | null {
+  const usage = (json as { usage?: unknown } | null | undefined)?.usage;
+  if (!usage || typeof usage !== "object") return null;
+  const { input_tokens: input, output_tokens: output } = usage as {
+    input_tokens?: unknown;
+    output_tokens?: unknown;
+  };
+  if (!isTokenCount(input) || !isTokenCount(output)) return null;
+  return { inputTokens: input, outputTokens: output };
+}
+
+/**
+ * Folds one turn's usage into the running total for the whole agent run.
+ *
+ * WHY A SUM AND NOT THE LAST TURN: this engine is a multi-round tool loop —
+ * one customer message costs one API call per round (up to
+ * MAX_TOOL_ROUNDS), and every round re-sends the full, growing transcript
+ * plus the accumulated tool results. Reporting only the final turn would
+ * therefore understate the cost of exactly the conversations that cost the
+ * most — the ones that needed the most tools — which is the opposite of
+ * what per-store margin reporting exists to show.
+ *
+ * `null` stays `null` until some turn actually reports usage, because
+ * absent must remain distinguishable from zero all the way down to the
+ * nullable ai_response_logs columns: a run with no API key, or one that
+ * fails before its first response, has to write NULL rather than a
+ * misleading 0.
+ */
+export function addTurnUsage(total: TokenUsage | null, turn: TokenUsage | null): TokenUsage | null {
+  if (!turn) return total;
+  if (!total) return { inputTokens: turn.inputTokens, outputTokens: turn.outputTokens };
+  return {
+    inputTokens: total.inputTokens + turn.inputTokens,
+    outputTokens: total.outputTokens + turn.outputTokens,
+  };
+}
+
 export interface AgentRunResult {
   replyText: string | null;
   toolCalls: AgentToolCall[];
+  /**
+   * Tokens summed over EVERY round-trip this single customer message took.
+   * Null (not zero) when nothing billable happened or when the provider
+   * never gave us a usable usage block — see addTurnUsage.
+   */
+  usage: TokenUsage | null;
+  /** The model actually billed, carried alongside usage so pricing never has to guess. */
+  model: string;
+  /**
+   * How many provider round-trips this run actually made. Not billed off —
+   * cost comes from `usage` — but it is the number that explains why an
+   * advanced-engine reply costs several times a classic one, so it is worth
+   * having at the call site rather than inferring it from toolCalls.length
+   * (a single round can request several tools at once).
+   */
+  roundTrips: number;
 }
 
 /**
@@ -108,9 +191,14 @@ export async function runAgentWithTools(params: {
   tools: ToolDefinition<any, any>[];
   executeTool: (toolKey: string, args: unknown) => Promise<unknown>;
 }): Promise<AgentRunResult> {
-  if (!ANTHROPIC_API_KEY) return { replyText: null, toolCalls: [] };
+  // usage stays null here, never { 0, 0 }: no key means no call was ever
+  // made, which is "we spent nothing knowable", not "we spent zero".
+  if (!ANTHROPIC_API_KEY) return { replyText: null, toolCalls: [], usage: null, model: MODEL, roundTrips: 0 };
 
   const toolCalls: AgentToolCall[] = [];
+  // Accumulated across the whole loop, not per turn — see addTurnUsage.
+  let usage: TokenUsage | null = null;
+  let roundTrips = 0;
   const anthropicTools = params.tools.map((t) => ({
     name: t.key,
     description: t.description,
@@ -138,17 +226,28 @@ export async function runAgentWithTools(params: {
       }),
     });
 
+    roundTrips++;
+
     if (!resp.ok) {
       console.error(`Anthropic API error (agent runtime): ${resp.status} ${await resp.text()}`);
-      return { replyText: null, toolCalls };
+      // A failed round is unbilled, but the rounds BEFORE it were real
+      // spend — returning the accumulated total keeps a run that died
+      // mid-loop from silently erasing what it had already cost.
+      return { replyText: null, toolCalls, usage, model: MODEL, roundTrips };
     }
 
     const json = (await resp.json()) as { content: AnthropicContentBlock[] };
+
+    // Metered immediately, before any branch below can return: every exit
+    // path from this round onwards has already been paid for, so none of
+    // them may drop the turn.
+    usage = addTurnUsage(usage, readTurnUsage(json));
+
     const toolUseBlocks = json.content.filter((b): b is AnthropicToolUseBlock => b.type === "tool_use");
 
     if (toolUseBlocks.length === 0) {
       const text = json.content.find((b): b is AnthropicTextBlock => b.type === "text")?.text ?? null;
-      return { replyText: text, toolCalls };
+      return { replyText: text, toolCalls, usage, model: MODEL, roundTrips };
     }
 
     messages.push({ role: "assistant", content: json.content });
@@ -170,5 +269,10 @@ export async function runAgentWithTools(params: {
   // Exhausted MAX_TOOL_ROUNDS without a final text answer — caller treats
   // a null replyText as low confidence and escalates, same as every other
   // "the model didn't give us something to say" path in this module.
-  return { replyText: null, toolCalls };
+  //
+  // This is the single most expensive outcome the platform can have (the
+  // full round limit, spent, with nothing to say to the customer), so it is
+  // the last place that may go unmetered: the accumulated usage is returned
+  // even though there is no reply to attribute it to.
+  return { replyText: null, toolCalls, usage, model: MODEL, roundTrips };
 }
