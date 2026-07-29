@@ -15,6 +15,7 @@ import { StoresAdminPage } from "./pages/StoresAdminPage";
 import { AccountPage } from "./pages/AccountPage";
 import { BillingPage } from "./pages/BillingPage";
 import { LandingPage } from "./pages/LandingPage";
+import { LegalPage } from "./pages/LegalPage";
 import { InstallBanner } from "./pwa/InstallBanner";
 import { usePermissions, PERMISSIONS, PermissionKey } from "./lib/permissions";
 
@@ -96,6 +97,13 @@ export function App() {
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/simulate/:token" element={<SimulatePage />} />
+        {/* Must be reachable logged OUT: Salla's and Zid's app reviews and
+            every payment provider require a publicly fetchable privacy URL,
+            and a reviewer hitting a login wall fails the submission. Placed
+            above the "/*" authed catch-all for that reason. LegalPage picks
+            which document to render from the pathname itself. */}
+        <Route path="/privacy" element={<LegalPage />} />
+        <Route path="/terms" element={<LegalPage />} />
         <Route
           path="/*"
           element={

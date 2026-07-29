@@ -3,6 +3,7 @@ import { whatsappAdapter } from "./whatsapp";
 import { instagramAdapter } from "./instagram";
 import { messengerAdapter } from "./messenger";
 import { tiktokAdapter } from "./tiktok";
+import { telegramAdapter } from "./telegram";
 import { mockAdapter } from "./mock";
 import { simulationAdapter } from "./simulation";
 
@@ -14,6 +15,7 @@ const adapters: Record<string, ChannelAdapter> = {
   [instagramAdapter.key]: instagramAdapter,
   [messengerAdapter.key]: messengerAdapter,
   [tiktokAdapter.key]: tiktokAdapter,
+  [telegramAdapter.key]: telegramAdapter,
   [mockAdapter.key]: mockAdapter,
   [simulationAdapter.key]: simulationAdapter,
 };

@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { PERMISSIONS, ROLE_PERMISSIONS, ROLES } from "../src/lib/permissions";
 import { encryptSecret } from "../src/lib/crypto";
+import { listIndustryTemplates } from "../src/lib/industryTemplates";
 
 const prisma = new PrismaClient();
 
@@ -441,6 +442,49 @@ async function main() {
     },
     update: {},
   });
+
+  // ---------------------------------------------------------------------
+  // Telegram channel type (appended as its own block rather than folded
+  // into channelTypeDefs above, so this addition stays self-contained).
+  //
+  // Telegram is the fastest channel to connect — a BotFather token, no Meta
+  // business verification, no per-message fee — which makes it the channel
+  // a brand-new signup uses to see the product actually work
+  // (docs/27-telegram-setup.md). adapterKey matches telegramAdapter.key in
+  // src/modules/channels/adapters/telegram.ts.
+  // ---------------------------------------------------------------------
+  const telegramChannelType = await prisma.channelType.upsert({
+    where: { key: "telegram" },
+    create: { key: "telegram", name: "تيليجرام", adapterKey: "telegram" },
+    update: {},
+  });
+  channelTypeByKey.set("telegram", telegramChannelType);
+
+  // ---------------------------------------------------------------------
+  // Industry knowledge-base starter templates (src/lib/industryTemplates.ts).
+  //
+  // These are made AVAILABLE here, deliberately NOT attached to any store.
+  // docker-entrypoint.sh runs this seed on every deploy, so any code that
+  // wrote template rows into a store's knowledge base would re-inject
+  // placeholder Q&A ("[قيمة] ريال") into a LIVE customer's knowledge base
+  // on every redeploy — content their AI agent would then quote to real
+  // customers, and which they may have deliberately deleted. Same class of
+  // bug as the duplicated demo messages fixed above, but with a much worse
+  // blast radius because the output is customer-facing.
+  //
+  // Attaching a template is therefore always an explicit, audited act by a
+  // human during onboarding (which store, which industry, whose user id
+  // goes in knowledge_sources.created_by) — decisions this seed has no
+  // standing to make on a merchant's behalf. The templates are plain
+  // exported data, so that flow just imports them.
+  // ---------------------------------------------------------------------
+  const templates = listIndustryTemplates();
+  const templateEntryCount = templates.reduce((sum, t) => sum + t.entries.length, 0);
+  console.log(
+    `Industry starter templates available (not attached to any store): ${templates
+      .map((t) => `${t.key}(${t.entries.length})`)
+      .join(", ")} — ${templateEntryCount} entries total.`
+  );
 
   console.log("Seed complete.");
   console.log("Owner login: hezmai039@gmail.com / Owner!2026");

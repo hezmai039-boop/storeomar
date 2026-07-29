@@ -7,8 +7,9 @@ import { authenticate } from "../../middleware/auth";
 import { requirePermission, requireStoreAccess } from "../../middleware/rbac";
 import { PERMISSIONS } from "../../lib/permissions";
 import { writeAudit } from "../../lib/audit";
-import { encryptSecret, decryptSecret } from "../../lib/crypto";
+import { encryptSecret } from "../../lib/crypto";
 import { getIntegrationAdapter } from "./adapters/registry";
+import { ensureFreshToken, IntegrationReconnectRequiredError } from "./tokenRefresh";
 
 export const integrationsRouter = Router({ mergeParams: true });
 integrationsRouter.use(authenticate, requireStoreAccess());
@@ -69,15 +70,37 @@ integrationsRouter.post(
   "/integrations/:id/sync",
   requirePermission(PERMISSIONS.INTEGRATIONS_MANAGE),
   asyncHandler(async (req, res) => {
+    // Resolve the integration first, in its own short transaction: both of
+    // the steps that follow (renewing an expiring token, then calling the
+    // platform's API) are network round-trips, and this codebase does not
+    // hold a Postgres transaction open across one — see the phase split in
+    // modules/channels/webhook.ts. The findFirst still scopes by storeId, so
+    // the ownership check is unchanged.
+    const integration = await withStoreContext(req.storeAccess!.accessibleStoreIds, (tx) =>
+      tx.integration.findFirstOrThrow({ where: { id: req.params.id, storeId: req.storeAccess!.storeId } })
+    );
+    const adapter = getIntegrationAdapter(integration.platform);
+
+    // Was JSON.parse(decryptSecret(...)) inline. ensureFreshToken returns the
+    // same blob, having transparently renewed it when it is about to expire —
+    // so an OAuth-installed store keeps syncing without the merchant ever
+    // reconnecting, and a genuinely dead connection reports itself as such
+    // instead of as a mystery 401 from the platform.
+    let credentials: Record<string, string>;
+    try {
+      credentials = await ensureFreshToken(integration.id);
+    } catch (err) {
+      if (err instanceof IntegrationReconnectRequiredError) {
+        throw new ApiError(409, err.code, "انتهت صلاحية ربط المتجر بالمنصة، أعد ربط المنصة من صفحة الإعدادات", {
+          platform: integration.platform,
+        });
+      }
+      throw err;
+    }
+
+    const [orders, products] = await Promise.all([adapter.fetchOrders(credentials), adapter.fetchProducts(credentials)]);
+
     const summary = await withStoreContext(req.storeAccess!.accessibleStoreIds, async (tx) => {
-      const integration = await tx.integration.findFirstOrThrow({
-        where: { id: req.params.id, storeId: req.storeAccess!.storeId },
-      });
-      const adapter = getIntegrationAdapter(integration.platform);
-      const credentials = JSON.parse(decryptSecret(integration.credentialsEncrypted));
-
-      const [orders, products] = await Promise.all([adapter.fetchOrders(credentials), adapter.fetchProducts(credentials)]);
-
       for (const o of orders) {
         await tx.syncedOrder.upsert({
           where: {
