@@ -23,10 +23,13 @@ model Organization {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  stores    Store[]
-  users     User[]
-  members   OrganizationMember[]
-  auditLogs AuditLog[]
+  stores        Store[]
+  users         User[]
+  members       OrganizationMember[]
+  auditLogs     AuditLog[]
+  subscription  Subscription?
+  usageCounters UsageCounter[]
+  invoices      Invoice[]
 
   @@map("organizations")
 }
@@ -85,6 +88,14 @@ model User {
   phone          String?
   passwordHash   String    @map("password_hash")
   status         String    @default("active")
+  // Platform staff, not tenant staff. `owner` is the top role INSIDE an
+  // organization — once clients sign themselves up (phase 3), every client
+  // is an owner of their own org, so owner cannot be what authorizes
+  // "confirm this bank transfer was actually received": that would let any
+  // customer approve their own invoice and run free forever. This flag is
+  // the only thing that gates the billing admin routes, and nothing in the
+  // API can set it — it is granted by the seed or by hand in the DB.
+  isPlatformAdmin Boolean  @default(false) @map("is_platform_admin")
   lastLoginAt    DateTime? @map("last_login_at") @db.Timestamptz(6)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -100,6 +111,7 @@ model User {
   ticketEvents           TicketEvent[]
   auditLogs              AuditLog[]
   createdSimulationLinks SimulationLink[]
+  reviewedInvoices       Invoice[]              @relation("InvoiceReviewer")
 
   @@map("users")
 }
@@ -377,6 +389,14 @@ model AiResponseLog {
   messageId       String?  @unique @map("message_id") @db.Uuid
   confidenceLevel String   @map("confidence_level")
   actionTaken     String   @map("action_taken")
+  // Per-reply provider usage. Nullable because every row written before
+  // billing shipped has no usage data, and because a paused/failed reply
+  // legitimately consumes nothing — 0 and "unknown" must stay
+  // distinguishable when reporting cost per store.
+  inputTokens     Int?     @map("input_tokens")
+  outputTokens    Int?     @map("output_tokens")
+  costMicroUsd    Int?     @map("cost_micro_usd")
+  model           String?
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   store        Store        @relation(fields: [storeId], references: [id])
@@ -681,4 +701,131 @@ model SimulationLink {
 
   @@index([storeId])
   @@map("simulation_links")
+}
+
+// ------------------------------------------------------------------
+// 11. Billing — plans, subscriptions, usage quotas and invoices.
+//
+// Scoped to the ORGANIZATION, not the store: a customer buys one
+// subscription and it covers every store under their org (an agency
+// running 30 client stores pays once, against one message quota). That is
+// also why none of these tables appear in prisma/rls.sql — RLS keys off
+// `app.accessible_store_ids`, and these rows have no store_id to key on.
+// Their isolation comes from the API layer instead: every billing route
+// reads req.auth.organizationId, which comes from the signed JWT and can
+// never be supplied by the client. See docs/25-billing-and-plans.md.
+//
+// Payment provider is deliberately abstracted (modules/billing/adapters)
+// rather than hard-wired to one gateway — same registry pattern as
+// channels/ and integrations/. Ships with the `manual` provider (bank
+// transfer + owner confirmation), which needs no commercial registration
+// or gateway contract to start collecting real money. Adding Moyasar or
+// Tap later is one adapter file plus one line in the registry.
+// ------------------------------------------------------------------
+
+model Plan {
+  id       String  @id @default(uuid()) @db.Uuid
+  key      String  @unique // free | basic | pro
+  name     String
+  nameEn   String  @map("name_en")
+  // Price in HALALAS (SAR × 100). Integer on purpose — floats lose money.
+  priceHalalas Int  @map("price_halalas")
+  currency String  @default("SAR")
+  interval String  @default("monthly") // monthly | yearly
+  // Quotas. null = unlimited, so an enterprise plan doesn't need sentinel
+  // numbers like 999999 that later read as a bug.
+  maxStores        Int? @map("max_stores")
+  maxUsers         Int? @map("max_users")
+  maxAiRepliesMonthly Int? @map("max_ai_replies_monthly")
+  features Json    @default("[]")
+  isActive Boolean @default(true) @map("is_active")
+  sortOrder Int    @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  subscriptions Subscription[]
+  invoices      Invoice[]
+
+  @@map("plans")
+}
+
+model Subscription {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @unique @map("organization_id") @db.Uuid
+  planId         String   @map("plan_id") @db.Uuid
+  // trialing | active | past_due | canceled
+  status         String   @default("trialing")
+  provider       String   @default("manual") // manual | moyasar | tap
+  providerRef    String?  @map("provider_ref")
+  currentPeriodStart DateTime @default(now()) @map("current_period_start") @db.Timestamptz(6)
+  currentPeriodEnd   DateTime @map("current_period_end") @db.Timestamptz(6)
+  trialEndsAt    DateTime? @map("trial_ends_at") @db.Timestamptz(6)
+  canceledAt     DateTime? @map("canceled_at") @db.Timestamptz(6)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  plan         Plan         @relation(fields: [planId], references: [id])
+
+  @@index([status, currentPeriodEnd])
+  @@map("subscriptions")
+}
+
+model UsageCounter {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  // First day of the billing month, "YYYY-MM" — cheap to compute, cheap to
+  // index, and makes "this month's usage" a single unique lookup instead of
+  // a range scan over ai_response_logs on every inbound message.
+  period         String
+  aiReplies      Int      @default(0) @map("ai_replies")
+  inputTokens    BigInt   @default(0) @map("input_tokens")
+  outputTokens   BigInt   @default(0) @map("output_tokens")
+  // Accumulated provider cost in MICRO-USD (USD × 1_000_000). Integer for
+  // the same reason prices are: a per-message cost of $0.0003 is invisible
+  // to cents, and rounding it away hides the real margin per customer.
+  costMicroUsd   BigInt   @default(0) @map("cost_micro_usd")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, period])
+  @@index([period])
+  @@map("usage_counters")
+}
+
+model Invoice {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  planId         String   @map("plan_id") @db.Uuid
+  number         String   @unique // ATL-2026-0001
+  status         String   @default("pending") // pending | awaiting_review | paid | rejected | void
+  provider       String   @default("manual")
+  subtotalHalalas Int     @map("subtotal_halalas")
+  // 15% VAT in Saudi Arabia — stored, not derived, so an invoice issued
+  // before/after a rate change or before VAT registration stays reproducible
+  // exactly as it was sent. Zero is valid and expected below the mandatory
+  // registration threshold.
+  vatHalalas     Int      @default(0) @map("vat_halalas")
+  totalHalalas   Int      @map("total_halalas")
+  periodStart    DateTime @map("period_start") @db.Timestamptz(6)
+  periodEnd      DateTime @map("period_end") @db.Timestamptz(6)
+  // Manual provider: the customer's transfer reference + uploaded receipt.
+  transferRef    String?  @map("transfer_ref")
+  receiptUrl     String?  @map("receipt_url")
+  reviewedBy     String?  @map("reviewed_by") @db.Uuid
+  reviewedAt     DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  reviewNote     String?  @map("review_note")
+  paidAt         DateTime? @map("paid_at") @db.Timestamptz(6)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  plan         Plan         @relation(fields: [planId], references: [id])
+  reviewer     User?        @relation("InvoiceReviewer", fields: [reviewedBy], references: [id])
+
+  @@index([organizationId, createdAt])
+  @@index([status, createdAt])
+  @@map("invoices")
 }
