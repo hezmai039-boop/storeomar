@@ -67,7 +67,7 @@ const PLAN_REQUEST_STATUS: Record<PlanRequestStatus, { label: string; badge: str
  */
 function whatsappHref(phone: string, planName: string): string {
   const digits = phone.replace(/\D/g, "");
-  const text = `مرحبًا، بخصوص طلبك لباقة «${planName}» في منصة Atlas`;
+  const text = `مرحبًا، بخصوص طلبك لباقة «${planName}» في منصة ميسور`;
   return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
 }
 

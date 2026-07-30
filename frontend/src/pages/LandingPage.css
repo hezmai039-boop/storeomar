@@ -1,27 +1,50 @@
-/* Atlas — public landing page. A self-contained, deliberately dark "luxury
-   violet" marketing world, scoped entirely under .lp so it shares nothing
-   with the dashboard's tokens.css and can never affect the app UI. */
+/* ميسور — public landing page (and the legal pages, which reuse this file).
+   A self-contained dark navy marketing world, scoped entirely under .lp so it
+   shares nothing with the dashboard's tokens.css and can never affect the app
+   UI. Only the font stack and the radius fallback are borrowed from tokens.
+
+   ── Palette, and why the orange never carries text on a fill ──────────────
+   #FF6A00 is 2.87:1 on white, so it is a FILL and large display text here,
+   never small text and never a background for white letters. On this page's
+   navy world it is 6.11:1 on --bg-0 and 4.93:1 on --bg-1, which is why the
+   headline and the price figures can be orange at all. Two orange roles are
+   kept apart:
+     --accent      #FF6A00  fills (buttons, tags, step numbers) and DISPLAY
+                            text ≥24px — always with --accent-ink on top
+     --accent-soft #FFA974  orange as SMALL text on the dark field (eyebrow,
+                            list ticks, dialog success line) — 5.06:1 against
+                            the brightest background this page can compose
+     --accent-ink  #0D2C4D  what sits ON an orange fill. Never #fff.
+   Blue is the secondary depth (buttons, focus, ambient), navy is the world,
+   mist/white is the text. The ambient auras and orbs below are deliberately
+   weak: they stack, and every ceiling in the list above was computed against
+   the brightest point they can produce (a hovered card sitting on the orb
+   peak, #21486C) rather than against the flat --bg-0. */
 
 .lp {
-  --ink: #f4efff;
-  --dim: #c3b8e0;
-  --faint: #8f83ad;
-  --violet: #8b5cf6;
-  --violet-soft: #a883ff;
-  --violet-deep: #6d28d9;
-  --gold: #e7c874;
-  --gold-soft: #f2dd9e;
-  --bg-0: #0b0718;
-  --bg-1: #130b28;
-  --surface: rgba(255, 255, 255, 0.045);
-  --surface-2: rgba(255, 255, 255, 0.07);
+  --ink: #f2f7fc;
+  --dim: #b9cee0;
+  --faint: #a7bdd1;
+  --blue: #1e5a8a;
+  --blue-soft: #8fc0e6;
+  --blue-deep: #0d2c4d;
+  --accent: #ff6a00;
+  --accent-soft: #ffa974;
+  --accent-ink: #0d2c4d;
+  --bg-0: #071a2e;
+  --bg-1: #0d2c4d;
+  --surface: rgba(255, 255, 255, 0.04);
+  --surface-2: rgba(255, 255, 255, 0.06);
   --border: rgba(255, 255, 255, 0.1);
-  --border-2: rgba(255, 255, 255, 0.18);
-  --grad-violet: linear-gradient(135deg, #a883ff 0%, #7c3aed 48%, #5b21b6 100%);
-  --grad-gold: linear-gradient(135deg, #f2dd9e 0%, #e7c874 55%, #caa54e 100%);
+  --border-2: rgba(255, 255, 255, 0.2);
+  --grad-blue: linear-gradient(135deg, #2f6ea3 0%, #1e5a8a 48%, #0d2c4d 100%);
+  /* Stops run light→brand, never past it: a darker stop would drop navy
+     below 4.5:1 on its own button. */
+  --grad-accent: linear-gradient(135deg, #ffa974 0%, #ff8534 50%, #ff6a00 100%);
 
   direction: rtl;
-  font-family: "Segoe UI", Tahoma, "Noto Sans Arabic", "Noto Kufi Arabic", Arial, sans-serif;
+  /* Tajawal + Inter, declared once globally in styles/fonts.css. */
+  font-family: var(--font-body, "Tajawal", "Inter", "Segoe UI", Tahoma, "Noto Sans Arabic", Arial, sans-serif);
   color: var(--ink);
   background: var(--bg-0);
   min-height: 100vh;
@@ -30,15 +53,19 @@
   line-height: 1.75;
 }
 
-/* Ambient background: layered radial auras + a soft grid. */
+/* Ambient background: a navy vignette rising from the bottom, one blue glow
+   on the mid-right, a trace of orange warmth, and a soft grid. The blue glow
+   sits at 46% height on purpose — the nav and the footer carry the logo
+   lockup, whose descriptor line is brand orange at ~9px, and that line only
+   clears 4.5:1 while those two bands stay at or below --bg-1. */
 .lp::before {
   content: "";
   position: fixed;
   inset: 0;
   background:
-    radial-gradient(60% 50% at 82% 8%, rgba(124, 58, 237, 0.42), transparent 60%),
-    radial-gradient(50% 45% at 12% 22%, rgba(231, 200, 116, 0.12), transparent 60%),
-    radial-gradient(70% 60% at 50% 120%, rgba(109, 40, 217, 0.34), transparent 60%),
+    radial-gradient(65% 45% at 84% 46%, rgba(30, 90, 138, 0.18), transparent 62%),
+    radial-gradient(46% 40% at 10% 18%, rgba(255, 106, 0, 0.06), transparent 62%),
+    radial-gradient(75% 62% at 50% 118%, rgba(13, 44, 77, 0.85), transparent 64%),
     var(--bg-0);
   z-index: 0;
 }
@@ -55,9 +82,11 @@
 .lp > * { position: relative; z-index: 1; }
 
 /* floating orbs */
-.lp-orb { position: fixed; border-radius: 50%; filter: blur(60px); opacity: 0.5; z-index: 0; pointer-events: none; }
-.lp-orb.a { width: 340px; height: 340px; background: #7c3aed; inset-block-start: -60px; inset-inline-end: -40px; animation: lp-float 14s ease-in-out infinite; }
-.lp-orb.b { width: 260px; height: 260px; background: #4c1d95; inset-block-end: 8%; inset-inline-start: -60px; animation: lp-float 18s ease-in-out infinite reverse; }
+.lp-orb { position: fixed; border-radius: 50%; filter: blur(60px); z-index: 0; pointer-events: none; }
+.lp-orb.a { width: 340px; height: 340px; background: var(--blue); opacity: 0.26; inset-block-start: -60px; inset-inline-end: -40px; animation: lp-float 14s ease-in-out infinite; }
+/* Navy rather than blue: this one drifts under the footer, and navy on navy
+   lightens the band by almost nothing. */
+.lp-orb.b { width: 260px; height: 260px; background: var(--blue-deep); opacity: 0.45; inset-block-end: 8%; inset-inline-start: -60px; animation: lp-float 18s ease-in-out infinite reverse; }
 @keyframes lp-float { 0%,100% { transform: translateY(0) translateX(0); } 50% { transform: translateY(28px) translateX(-18px); } }
 
 /* ---------------- nav ---------------- */
@@ -65,14 +94,9 @@
   display: flex; align-items: center; justify-content: space-between;
   max-width: 1120px; margin: 0 auto; padding: 20px 24px;
 }
-.lp-brand { display: flex; align-items: center; gap: 11px; }
-.lp-brand .mark {
-  width: 40px; height: 40px; border-radius: 12px; background: var(--grad-violet);
-  display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 20px; color: #fff;
-  box-shadow: 0 8px 22px rgba(124, 58, 237, 0.5);
-}
-.lp-brand .name { font-size: 20px; font-weight: 800; letter-spacing: 0.5px; }
-.lp-brand .name small { display: block; font-size: 10px; font-weight: 600; letter-spacing: 0.22em; color: var(--faint); direction: ltr; text-align: right; }
+/* The mark and wordmark come from <LogoLockup>, which owns the geometry and
+   its own colours — this is only the row that holds it. */
+.lp-brand { display: inline-flex; align-items: center; gap: 11px; }
 
 /* ---------------- buttons ---------------- */
 .lp-btn {
@@ -84,30 +108,32 @@
 .lp-btn-lg { font-size: 16.5px; padding: 17px 40px; }
 .lp-btn-sm { font-size: 14px; padding: 11px 24px; }
 
-/* primary — violet with a moving sheen + glow */
-.lp-btn-primary { background: var(--grad-violet); color: #fff; box-shadow: 0 12px 34px rgba(124, 58, 237, 0.5); position: relative; overflow: hidden; }
+/* primary — blue with a moving sheen + glow. White clears 5.41:1 on the
+   lightest stop of --grad-blue. */
+.lp-btn-primary { background: var(--grad-blue); color: #fff; box-shadow: 0 12px 34px rgba(30, 90, 138, 0.5); position: relative; overflow: hidden; }
 .lp-btn-primary::after {
   content: ""; position: absolute; inset-block: 0; inset-inline-start: -120%; width: 60%;
   background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.4), transparent);
   transform: skewX(-18deg); transition: inset-inline-start 0.6s;
 }
-.lp-btn-primary:hover { transform: translateY(-3px); box-shadow: 0 18px 46px rgba(124, 58, 237, 0.62); }
+.lp-btn-primary:hover { transform: translateY(-3px); box-shadow: 0 18px 46px rgba(30, 90, 138, 0.62); }
 .lp-btn-primary:hover::after { inset-inline-start: 130%; }
 
-/* gold — the premium accent CTA */
-.lp-btn-gold { background: var(--grad-gold); color: #3a2c07; box-shadow: 0 12px 34px rgba(231, 200, 116, 0.4); }
-.lp-btn-gold:hover { transform: translateY(-3px); box-shadow: 0 18px 46px rgba(231, 200, 116, 0.55); }
+/* accent — the conversion CTA. NAVY on orange, never white: white on #FF6A00
+   is 2.87:1 and fails even AA-large. Navy is 4.93:1 on the brand stop. */
+.lp-btn-accent { background: var(--grad-accent); color: var(--accent-ink); box-shadow: 0 12px 34px rgba(255, 106, 0, 0.34); }
+.lp-btn-accent:hover { transform: translateY(-3px); box-shadow: 0 18px 46px rgba(255, 106, 0, 0.48); }
 
 /* ghost — glass outline */
 .lp-btn-ghost { background: var(--surface-2); color: var(--ink); border: 1px solid var(--border-2); backdrop-filter: blur(8px); }
-.lp-btn-ghost:hover { transform: translateY(-3px); background: rgba(255, 255, 255, 0.12); border-color: var(--violet-soft); }
+.lp-btn-ghost:hover { transform: translateY(-3px); background: rgba(255, 255, 255, 0.12); border-color: var(--blue-soft); }
 
-.lp-btn:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
+.lp-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 
 /* pulse ring on the hero primary */
 .lp-cta-pulse { position: relative; }
 .lp-cta-pulse::before {
-  content: ""; position: absolute; inset: -4px; border-radius: 999px; border: 2px solid rgba(168, 131, 255, 0.6);
+  content: ""; position: absolute; inset: -4px; border-radius: 999px; border: 2px solid rgba(255, 133, 52, 0.65);
   animation: lp-pulse 2.4s ease-out infinite;
 }
 @keyframes lp-pulse { 0% { opacity: 0.8; transform: scale(1); } 100% { opacity: 0; transform: scale(1.18); } }
@@ -116,18 +142,20 @@
 .lp-hero { max-width: 960px; margin: 0 auto; padding: 46px 24px 40px; text-align: center; }
 .lp-eyebrow {
   display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 700;
-  letter-spacing: 0.14em; color: var(--gold-soft); background: rgba(231, 200, 116, 0.1);
-  border: 1px solid rgba(231, 200, 116, 0.28); border-radius: 999px; padding: 7px 16px; margin-bottom: 26px;
+  letter-spacing: 0.14em; color: var(--accent-soft); background: rgba(255, 106, 0, 0.1);
+  border: 1px solid rgba(255, 106, 0, 0.32); border-radius: 999px; padding: 7px 16px; margin-bottom: 26px;
 }
 .lp-hero h1 {
   font-size: clamp(32px, 6vw, 58px); line-height: 1.18; margin: 0 0 22px; font-weight: 800;
   letter-spacing: -0.5px; text-wrap: balance;
 }
-.lp-hero h1 .hl { background: var(--grad-gold); -webkit-background-clip: text; background-clip: text; color: transparent; }
+/* Display size only — at 32px+ bold this is WCAG "large text" (3.0), and the
+   brand orange clears that everywhere on this page. */
+.lp-hero h1 .hl { background: var(--grad-accent); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .lp-hero .sub { font-size: clamp(15px, 2.4vw, 19px); color: var(--dim); max-width: 62ch; margin: 0 auto 34px; }
 .lp-hero-cta { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
 .lp-trust { margin-top: 26px; font-size: 13px; color: var(--faint); display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
-.lp-trust b { color: var(--violet-soft); }
+.lp-trust b { color: var(--blue-soft); }
 
 /* section shell */
 .lp-section { max-width: 1120px; margin: 0 auto; padding: 56px 24px; }
@@ -142,9 +170,9 @@
 }
 .lp-feat:hover { transform: translateY(-6px); border-color: var(--border-2); background: var(--surface-2); }
 .lp-feat .ic {
-  width: 52px; height: 52px; border-radius: 14px; background: var(--grad-violet);
+  width: 52px; height: 52px; border-radius: 14px; background: var(--grad-blue);
   display: flex; align-items: center; justify-content: center; font-size: 25px; margin-bottom: 16px;
-  box-shadow: 0 8px 20px rgba(124, 58, 237, 0.4);
+  box-shadow: 0 8px 20px rgba(30, 90, 138, 0.42);
 }
 .lp-feat h3 { margin: 0 0 7px; font-size: 18px; font-weight: 800; }
 .lp-feat p { margin: 0; color: var(--dim); font-size: 14px; }
@@ -155,7 +183,7 @@
   background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 28px 24px; position: relative;
 }
 .lp-step .k {
-  font-size: 15px; font-weight: 800; color: #3a2c07; background: var(--grad-gold);
+  font-size: 15px; font-weight: 800; color: var(--accent-ink); background: var(--grad-accent);
   width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
   margin-bottom: 16px; font-variant-numeric: tabular-nums;
 }
@@ -168,14 +196,14 @@
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; text-align: center;
   background: var(--surface); border: 1px solid var(--border); border-radius: 22px; backdrop-filter: blur(10px);
 }
-.lp-stat .n { font-size: clamp(26px, 4vw, 40px); font-weight: 800; background: var(--grad-gold); -webkit-background-clip: text; background-clip: text; color: transparent; font-variant-numeric: tabular-nums; }
+.lp-stat .n { font-size: clamp(26px, 4vw, 40px); font-weight: 800; background: var(--grad-accent); -webkit-background-clip: text; background-clip: text; color: transparent; font-variant-numeric: tabular-nums; }
 .lp-stat .l { font-size: 13.5px; color: var(--dim); }
 
 /* ---------------- final CTA ---------------- */
 .lp-final {
   max-width: 1000px; margin: 40px auto; padding: 56px 32px; text-align: center;
   border-radius: 28px; position: relative; overflow: hidden;
-  background: linear-gradient(135deg, rgba(124, 58, 237, 0.22), rgba(231, 200, 116, 0.12));
+  background: linear-gradient(135deg, rgba(30, 90, 138, 0.3), rgba(255, 106, 0, 0.1));
   border: 1px solid var(--border-2);
 }
 .lp-final h2 { font-size: clamp(24px, 4.4vw, 40px); margin: 0 0 14px; font-weight: 800; text-wrap: balance; }
@@ -187,8 +215,8 @@
   max-width: 1120px; margin-inline: auto; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;
   color: var(--faint); font-size: 13px;
 }
-.lp-foot .lp-brand .name { font-size: 16px; }
-.lp-foot .lp-brand .mark { width: 32px; height: 32px; font-size: 16px; border-radius: 10px; }
+.lp-foot a { color: var(--dim); text-decoration: none; }
+.lp-foot a:hover { color: var(--ink); }
 
 /* ---------------- entrance motion ---------------- */
 .lp-reveal { opacity: 0; transform: translateY(22px); animation: lp-rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
@@ -208,28 +236,29 @@
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.3s, background 0.3s;
 }
 .lp-plan:hover { transform: translateY(-6px); border-color: var(--border-2); background: var(--surface-2); }
-/* The recommended plan carries the gold border the final CTA uses, not a
-   different accent — the page only has two emphasis levels and adding a
-   third would flatten both. */
-.lp-plan.is-featured { border-color: rgba(231, 200, 116, 0.55); background: linear-gradient(135deg, rgba(124, 58, 237, 0.16), rgba(231, 200, 116, 0.07)); }
+/* The recommended plan carries the orange the final CTA uses, not a third
+   colour — the page only has two emphasis levels and adding another would
+   flatten both. */
+.lp-plan.is-featured { border-color: rgba(255, 106, 0, 0.6); background: linear-gradient(135deg, rgba(30, 90, 138, 0.22), rgba(255, 106, 0, 0.07)); }
 .lp-plan .tag {
   position: absolute; inset-block-start: -11px; inset-inline-start: 24px;
-  background: var(--grad-gold); color: #3a2c07; font-size: 11.5px; font-weight: 800;
+  background: var(--grad-accent); color: var(--accent-ink); font-size: 11.5px; font-weight: 800;
   padding: 4px 12px; border-radius: var(--radius-pill, 999px); letter-spacing: 0.2px;
 }
 .lp-plan h3 { margin: 0; font-size: 19px; font-weight: 800; }
 .lp-plan .price { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .lp-plan .price .n {
   font-size: clamp(28px, 4vw, 38px); font-weight: 800; font-variant-numeric: tabular-nums;
-  background: var(--grad-gold); -webkit-background-clip: text; background-clip: text; color: transparent;
+  background: var(--grad-accent); -webkit-background-clip: text; background-clip: text; color: transparent;
 }
 .lp-plan .price .per { font-size: 13.5px; color: var(--faint); }
 .lp-plan ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; }
 .lp-plan li { font-size: 14px; color: var(--dim); display: flex; gap: 9px; align-items: flex-start; }
 /* The tick is a pseudo-element, not a character in the text: a screen reader
    announcing "check mark" before every line is noise, and the list already
-   reads as a list. */
-.lp-plan li::before { content: "✦"; color: var(--violet-soft); font-size: 12px; line-height: 1.9; flex: none; }
+   reads as a list. --accent-soft rather than --accent, because at 12px this
+   is small text. */
+.lp-plan li::before { content: "✦"; color: var(--accent-soft); font-size: 12px; line-height: 1.9; flex: none; }
 .lp-plan .lp-btn { margin-block-start: auto; width: 100%; justify-content: center; }
 
 /* ---------------- request dialog ---------------- */
@@ -240,19 +269,20 @@
 .lp-dialog {
   border: 1px solid var(--border-2); border-radius: 20px; padding: 0; max-width: 460px; width: calc(100% - 32px);
   background: var(--bg-1); color: var(--ink); direction: rtl;
-  font-family: "Segoe UI", Tahoma, "Noto Sans Arabic", "Noto Kufi Arabic", Arial, sans-serif;
+  font-family: var(--font-body, "Tajawal", "Inter", "Segoe UI", Tahoma, "Noto Sans Arabic", Arial, sans-serif);
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
 }
-.lp-dialog::backdrop { background: rgba(6, 3, 16, 0.72); backdrop-filter: blur(3px); }
+.lp-dialog::backdrop { background: rgba(4, 16, 29, 0.74); backdrop-filter: blur(3px); }
 .lp-dialog-body { padding: 26px 24px; display: grid; gap: 14px; }
 .lp-dialog h3 { margin: 0; font-size: 19px; font-weight: 800; }
 .lp-dialog .hint { margin: 0; font-size: 13.5px; color: var(--dim); }
 .lp-field { display: grid; gap: 6px; font-size: 13px; color: var(--dim); }
 .lp-field input, .lp-field textarea {
-  background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border); border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06); border: 1px solid var(--border); border-radius: 12px;
   padding: 11px 13px; color: var(--ink); font: inherit; font-size: 14px; width: 100%;
 }
-.lp-field input:focus-visible, .lp-field textarea:focus-visible { outline: 2px solid var(--violet-soft); outline-offset: 1px; border-color: transparent; }
+.lp-field input::placeholder, .lp-field textarea::placeholder { color: var(--faint); }
+.lp-field input:focus-visible, .lp-field textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
 .lp-field textarea { resize: vertical; min-height: 74px; }
 /* The honeypot. Not `display:none` and not `hidden`: a bot worth defending
    against skips fields the browser reports as unrendered, while several
@@ -261,8 +291,8 @@
    naive form-filler. */
 .lp-hp { position: absolute; inset-inline-start: -9999px; width: 1px; height: 1px; overflow: hidden; }
 .lp-dialog-actions { display: flex; gap: 10px; justify-content: flex-start; margin-block-start: 4px; }
-.lp-dialog .err { margin: 0; font-size: 13px; color: #fca5a5; }
-.lp-dialog .ok { margin: 0; font-size: 14px; color: var(--gold-soft); line-height: 1.9; }
+.lp-dialog .err { margin: 0; font-size: 13px; color: #ffb4a8; }
+.lp-dialog .ok { margin: 0; font-size: 14px; color: var(--accent-soft); line-height: 1.9; }
 
 @media (max-width: 820px) {
   .lp-grid, .lp-steps, .lp-stats { grid-template-columns: 1fr; }

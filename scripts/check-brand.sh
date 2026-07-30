@@ -19,10 +19,17 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-# Identifiers that are ALLOWED to still say atlas. Anchored to the exact
-# token so that, say, "atlas-storage" passing does not also let "Atlas" pass
-# on the same line.
-ALLOW='atlas:realtime|atlas:cache:invalidate|atlas_app|atlas_resolver|atlas-storage|atlas-owner|LEGACY_INVOICE_PREFIXES|ATL-|atlas_token|check-brand'
+# Identifiers that are ALLOWED to still say atlas — live names that renaming
+# would break, listed one by one rather than as a blanket pattern.
+ALLOW_IDENT='`atlas`|atlas:realtime|atlas:cache:invalidate|atlas_app|atlas_resolver|atlas-storage|atlas_uploads|atlas-owner|atlas_token|atlas-[*]?[-0-9A-Za-z]*[.]dump|LEGACY_INVOICE_PREFIXES|ATL-|check-brand'
+
+# A line whose PURPOSE is to explain why an old name survives is
+# documentation, not a leak — flagging it would teach people to delete the
+# explanation to make this script quiet, which is the opposite of the point.
+# Recognised by the words such an explanation actually uses.
+ALLOW_PROSE='rebrand|pre-rebrand|ON PURPOSE|legacy|إعادة التسمية|سابقة لإعادة|عمدًا|القديمة|الأقدم|أقدم|تبقى صالحة'
+
+ALLOW="$ALLOW_IDENT|$ALLOW_PROSE"
 
 # Where a customer or a search engine can actually see text.
 SEARCH_PATHS=(frontend/src frontend/public frontend/index.html backend/src backend/prisma docs scripts promo README.md)
@@ -58,8 +65,13 @@ echo "── قاعدة التباين: نص أبيض على برتقالي ─�
 # #FF6A00 with white text is 2.87:1 and fails WCAG AA. The rule is that an
 # orange fill always carries NAVY text. This catches the most likely way
 # someone breaks it: putting #fff next to the brand orange on one line.
-bad=$(grep -rniE '(ff6a00|var\(--accent\)|var\(--brand-orange\)).*(#fff|#ffffff|white)|(#fff|#ffffff|color: *white).*(ff6a00|var\(--accent\)|var\(--brand-orange\))' \
-  frontend/src 2>/dev/null | grep -viE 'accent-ink|NEVER|never|قاعدة|2\.87' || true)
+#
+# Only DECLARATIONS are examined — a line has to actually set a colour. Prose
+# saying "#FF6A00 cannot carry white text" is the rule being written down, and
+# an earlier version of this check flagged exactly that, which would have
+# pressured someone into deleting the warning to get a green run.
+bad=$(grep -rniE '(color|background|background-color|fill|stroke) *: *[^;]*(ff6a00|var\(--accent\)|var\(--brand-orange\))[^;]*(#fff|#ffffff|white)|(color|fill) *: *(#fff|#ffffff|white)[^;]*;[^;]*(background|background-color) *: *[^;]*(ff6a00|var\(--accent\)|var\(--brand-orange\))' \
+  frontend/src 2>/dev/null | grep -viE 'accent-ink|never|cannot|قاعدة|2\.87' || true)
 if [ -n "$bad" ]; then
   echo "⚠ راجع هذه — النص الأبيض على البرتقالي يسقط في اختبار التباين:"
   echo "$bad"

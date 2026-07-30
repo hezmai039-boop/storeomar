@@ -5,6 +5,7 @@ import { useStore } from "../context/StoreContext";
 import { api } from "../api/client";
 import type { KnowledgeSuggestion, PlanRequest } from "../api/types";
 import { usePermissions, PERMISSIONS } from "../lib/permissions";
+import { LogoLockup } from "./Logo";
 import "./AppShell.css";
 
 const PENDING_REVIEW_POLL_MS = 45_000;
@@ -108,12 +109,11 @@ export function AppShell() {
       </main>
 
       <nav className="sidebar">
+        {/* One source of truth for the mark — see components/Logo.tsx. The
+            sidebar used to draw its own letter tile, which is exactly how a
+            brand drifts out of sync with its own app icon. */}
         <div className="brand">
-          <div className="mark">A</div>
-          <div>
-            <div className="name">Atlas</div>
-            <div className="tag">store ops control tower</div>
-          </div>
+          <LogoLockup size={34} />
         </div>
 
         {me.stores.length > 1 && (
@@ -238,7 +238,7 @@ export function AppShell() {
           </>
         )}
 
-        <div className="sidebar-foot">Atlas · MVP قيد التطوير</div>
+        <div className="sidebar-foot">ميسور · MVP قيد التطوير</div>
       </nav>
     </div>
   );

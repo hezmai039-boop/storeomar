@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, ApiClientError } from "../api/client";
+import { LogoLockup } from "../components/Logo";
 import "./LoginPage.css";
 
 type State = "working" | "done" | "failed" | "missing";
@@ -63,8 +64,10 @@ export function VerifyEmailPage() {
       <span className="login-blob b1" />
       <span className="login-blob b2" />
 
-      <div className="login-card atlas-enter">
-        <div className="login-mark">A</div>
+      <div className="login-card ms-enter">
+        <div className="login-brand">
+          <LogoLockup size={38} tone="light" />
+        </div>
         <div>
           <div className="login-title">{body.title}</div>
           <div className="login-sub">{body.sub}</div>

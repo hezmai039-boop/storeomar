@@ -88,7 +88,7 @@ export function InboxPage() {
 
       {aiPaused && (
         <div
-          className="card atlas-enter"
+          className="card ms-enter"
           style={{
             padding: "12px 16px",
             marginBottom: 16,
@@ -105,7 +105,7 @@ export function InboxPage() {
       )}
 
       <div
-        className="card card-glass atlas-enter"
+        className="card card-glass ms-enter"
         style={{ display: "grid", gridTemplateColumns: "300px 1fr", height: 620, overflow: "hidden" }}
       >
         <div style={{ borderInlineStart: "1px solid var(--border)", overflowY: "auto", minHeight: 0 }}>
@@ -185,7 +185,7 @@ export function InboxPage() {
                 {messages.map((m, i) => (
                   <div
                     key={m.id}
-                    className="atlas-enter"
+                    className="ms-enter"
                     style={{
                       maxWidth: "62%",
                       alignSelf: m.senderType === "customer" ? "flex-end" : "flex-start",

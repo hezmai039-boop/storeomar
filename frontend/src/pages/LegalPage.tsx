@@ -1,4 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
+import { LogoLockup } from "../components/Logo";
 import "./LandingPage.css";
 
 // Public privacy policy + terms of service, rendered from one component.
@@ -53,14 +54,14 @@ const PRIVACY: LegalDoc = {
   slug: "privacy",
   title: "سياسة الخصوصية",
   intro:
-    "تحترم منصة Atlas («المنصة»، «نحن») خصوصية المتاجر التجارية («العميل» أو «المتجر») وعملائها النهائيين («المستخدم النهائي»). توضح هذه السياسة كيف نجمع بيانات المحادثات ونستخدمها ونحميها عند ربط قنوات تواصل مثل واتساب (WhatsApp Business Platform) بمنصتنا.",
+    "تحترم منصة ميسور («المنصة»، «نحن») خصوصية المتاجر التجارية («العميل» أو «المتجر») وعملائها النهائيين («المستخدم النهائي»). توضح هذه السياسة كيف نجمع بيانات المحادثات ونستخدمها ونحميها عند ربط قنوات تواصل مثل واتساب (WhatsApp Business Platform) بمنصتنا.",
   sections: [
     {
       title: "١. من نحن وماذا تفعل المنصة",
       blocks: [
         {
           kind: "p",
-          text: "Atlas منصة SaaS متعددة المتاجر (Multi-Tenant) تتيح للمتاجر التجارية توحيد قنوات التواصل مع عملائهم (واتساب، إنستغرام، ماسنجر) في صندوق وارد واحد، مدعومة بوكيل ذكاء اصطناعي يجيب على استفسارات العملاء بالاعتماد على قاعدة معرفة خاصة بكل متجر.",
+          text: "ميسور منصة SaaS متعددة المتاجر (Multi-Tenant) تتيح للمتاجر التجارية توحيد قنوات التواصل مع عملائهم (واتساب، إنستغرام، ماسنجر) في صندوق وارد واحد، مدعومة بوكيل ذكاء اصطناعي يجيب على استفسارات العملاء بالاعتماد على قاعدة معرفة خاصة بكل متجر.",
         },
       ],
     },
@@ -161,14 +162,14 @@ const TERMS: LegalDoc = {
   slug: "terms",
   title: "شروط الاستخدام",
   intro:
-    "باستخدام منصة Atlas، يوافق المتجر على هذه الشروط بالكامل. إن لم يوافق المتجر على أي بند منها، يجب عدم استخدام المنصة.",
+    "باستخدام منصة ميسور، يوافق المتجر على هذه الشروط بالكامل. إن لم يوافق المتجر على أي بند منها، يجب عدم استخدام المنصة.",
   sections: [
     {
       title: "١. وصف الخدمة",
       blocks: [
         {
           kind: "p",
-          text: "Atlas منصة تقنية (SaaS) تتيح للمتجر ربط قنوات تواصله (واتساب وغيرها) وإدارة محادثاته مع عملائه، مع خيار تفعيل وكيل ذكاء اصطناعي للرد التلقائي. Atlas ليست طرفًا في العلاقة التجارية بين المتجر وعملائه، ولا تتحمل مسؤولية محتوى المنتجات أو الخدمات التي يبيعها المتجر.",
+          text: "ميسور منصة تقنية (SaaS) تتيح للمتجر ربط قنوات تواصله (واتساب وغيرها) وإدارة محادثاته مع عملائه، مع خيار تفعيل وكيل ذكاء اصطناعي للرد التلقائي. ميسور ليست طرفًا في العلاقة التجارية بين المتجر وعملائه، ولا تتحمل مسؤولية محتوى المنتجات أو الخدمات التي يبيعها المتجر.",
         },
       ],
     },
@@ -180,7 +181,7 @@ const TERMS: LegalDoc = {
           items: [
             "تقديم معلومات صحيحة عند التسجيل وربط القنوات.",
             "عدم استخدام المنصة لإرسال رسائل غير مرغوب فيها (Spam) أو مخالفة لسياسات Meta لتجارة الأعمال (WhatsApp Business Policy).",
-            "التأكد من صحة محتوى قاعدة المعرفة التي يزوّد بها وكيل الذكاء الاصطناعي؛ Atlas غير مسؤولة عن دقة إجابات مبنية على محتوى أدخله المتجر نفسه.",
+            "التأكد من صحة محتوى قاعدة المعرفة التي يزوّد بها وكيل الذكاء الاصطناعي؛ ميسور غير مسؤولة عن دقة إجابات مبنية على محتوى أدخله المتجر نفسه.",
             "الحصول على موافقة (Opt-in) عملائه قبل مراسلتهم عبر واتساب، وفق سياسات Meta.",
             "الحفاظ على سرية بيانات دخول فريقه، وإلغاء وصول أي موظف يغادر المتجر.",
           ],
@@ -194,7 +195,7 @@ const TERMS: LegalDoc = {
           kind: "ul",
           items: [
             "تُقدَّم الخدمة «كما هي» دون ضمان بعدم انقطاعها الكامل، نظرًا لاعتمادها على واجهات برمجية خارجية (Meta، ومزود نموذج الذكاء الاصطناعي).",
-            "لا تتحمل Atlas مسؤولية أي أضرار تجارية غير مباشرة ناتجة عن رد آلي من وكيل الذكاء الاصطناعي؛ ويوفّر النظام آلية تصعيد للبشر (تذاكر) ومفتاح إيقاف طارئ للرد الآلي متاح للمتجر في أي وقت.",
+            "لا تتحمل ميسور مسؤولية أي أضرار تجارية غير مباشرة ناتجة عن رد آلي من وكيل الذكاء الاصطناعي؛ ويوفّر النظام آلية تصعيد للبشر (تذاكر) ومفتاح إيقاف طارئ للرد الآلي متاح للمتجر في أي وقت.",
           ],
         },
       ],
@@ -304,11 +305,7 @@ export function LegalPage() {
 
       <nav className="lp-nav">
         <Link to="/" className="lp-brand" style={{ textDecoration: "none", color: "inherit" }}>
-          <div className="mark">A</div>
-          <div className="name">
-            Atlas
-            <small>STORE OPS · AI</small>
-          </div>
+          <LogoLockup size={38} tone="light" />
         </Link>
         <Link to={`/${other.slug}`} className="lp-btn lp-btn-ghost lp-btn-sm">
           {other.title}
@@ -338,14 +335,14 @@ export function LegalPage() {
           <ul style={{ margin: 0, paddingInlineStart: 22, color: "var(--dim)", fontSize: 15.5 }}>
             <li style={{ marginBottom: 8 }}>
               واتساب:{" "}
-              <a href={`https://wa.me/${CONTACT_WHATSAPP}`} target="_blank" rel="noopener noreferrer" style={{ color: "var(--violet-soft)" }}>
+              <a href={`https://wa.me/${CONTACT_WHATSAPP}`} target="_blank" rel="noopener noreferrer" style={{ color: "var(--blue-soft)" }}>
                 +{CONTACT_WHATSAPP}
               </a>
             </li>
             {SUPPORT_EMAIL && (
               <li style={{ marginBottom: 8 }}>
                 البريد الإلكتروني:{" "}
-                <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: "var(--violet-soft)" }}>
+                <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: "var(--blue-soft)" }}>
                   {SUPPORT_EMAIL}
                 </a>
               </li>
@@ -358,8 +355,7 @@ export function LegalPage() {
 
       <footer className="lp-foot">
         <div className="lp-brand">
-          <div className="mark">A</div>
-          <div className="name">Atlas</div>
+          <LogoLockup size={32} tone="light" />
         </div>
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
           <Link to="/privacy" style={{ color: "var(--dim)", textDecoration: "none" }}>
@@ -368,7 +364,8 @@ export function LegalPage() {
           <Link to="/terms" style={{ color: "var(--dim)", textDecoration: "none" }}>
             شروط الاستخدام
           </Link>
-          <span>© {new Date().getFullYear()} Atlas</span>
+          <span dir="ltr">maysoor.com</span>
+          <span>© {new Date().getFullYear()} ميسور</span>
         </div>
       </footer>
     </div>

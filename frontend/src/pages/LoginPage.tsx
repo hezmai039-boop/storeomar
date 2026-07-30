@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { usePublicConfig } from "../lib/publicConfig";
+import { LogoLockup } from "../components/Logo";
 import "./LoginPage.css";
 
 export function LoginPage() {
@@ -35,11 +36,13 @@ export function LoginPage() {
       <span className="login-blob b2" />
       <span className="login-blob b3" />
 
-      <form onSubmit={onSubmit} className="login-card atlas-enter">
-        <div className="login-mark">A</div>
+      <form onSubmit={onSubmit} className="login-card ms-enter">
+        <div className="login-brand">
+          <LogoLockup size={38} tone="light" />
+        </div>
         <div>
-          <div className="login-title">Atlas</div>
-          <div className="login-sub">تسجيل الدخول إلى منصة إدارة المتاجر</div>
+          <div className="login-title">تسجيل الدخول</div>
+          <div className="login-sub">إلى منصة ميسور لإدارة متاجرك وخدمة عملائها</div>
         </div>
 
         <label className="login-field">
@@ -66,7 +69,7 @@ export function LoginPage() {
               ليس لديك حساب؟ <Link to="/signup">إنشاء حساب جديد</Link>
             </div>
           )}
-          <div style={{ opacity: 0.7 }}>Atlas · منصة إدارة خدمة العملاء متعددة المتاجر</div>
+          <div style={{ opacity: 0.75 }}>ميسور · منصة إدارة خدمة العملاء متعددة المتاجر</div>
         </div>
       </form>
     </div>

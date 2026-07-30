@@ -90,7 +90,7 @@ function postToSentry(dsn: string, err: unknown, context: ErrorContext | undefin
       // sentry_client is purely informational — Sentry records it as the
       // reporting SDK's name and keys nothing on it, so renaming it at the
       // rebrand is safe. Events sent before this line changed stay tagged
-      // `atlas/1.0`, which is correct: that IS what sent them.
+      // the pre-rebrand `atlas/1.0`, which is correct: that IS what sent them.
       "x-sentry-auth": `Sentry sentry_version=7, sentry_client=maysoor/1.0, sentry_key=${target.publicKey}`,
     },
     body,

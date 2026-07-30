@@ -3,37 +3,84 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Atlas — غير متصل</title>
+    <title>ميسور — غير متصل</title>
+    <!--
+      This is the page the service worker serves when the network is gone, so
+      it must make ZERO external requests: no font file, no stylesheet, no
+      image, no script. Everything below is inline, the mark is inline SVG,
+      and the type falls back to whatever the device already has. A webfont
+      here would render as invisible text on exactly the connection that
+      cannot fetch it.
+
+      The mark is the same geometry as components/Logo.tsx (tone="light") and
+      public/icon.svg. It is duplicated here only because a static HTML file
+      cannot import the React component — if the mark changes, all three
+      change together.
+    -->
     <style>
-      :root { color-scheme: light dark; }
+      /* Navy world, orange as the single accent.
+         #FF6A00 is 2.87:1 on white, so it is never a background for white
+         text: the button is orange with NAVY letters (4.93:1). */
+      :root {
+        color-scheme: dark;
+        --navy: #0d2c4d;
+        --orange: #ff6a00;
+        /* The brand orange lightened just enough to carry 12px text on this
+           card (#1E3B59): #FF6A00 there is only 4.01:1. Fills keep the real
+           brand hex — this variant exists for text alone. */
+        --orange-text: #ffa974;
+        --mist: #e6ecf2;
+        --ink: #f2f7fc;
+        --dim: #b9cee0;
+      }
       body {
         margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
-        font-family: "Segoe UI", Tahoma, "Noto Sans Arabic", Arial, sans-serif;
-        background: linear-gradient(135deg, #a463f7 0%, #7c3aed 45%, #5622c9 100%);
-        color: #fff; text-align: center; padding: 24px;
+        font-family: "Tajawal", "Inter", "Segoe UI", Tahoma, "Noto Sans Arabic", Arial, sans-serif;
+        background: linear-gradient(160deg, #0d2c4d 0%, #071a2e 62%, #04101d 100%);
+        color: var(--ink); text-align: center; padding: 24px;
       }
       .card {
-        background: rgba(255,255,255,0.12); backdrop-filter: blur(14px);
-        border: 1px solid rgba(255,255,255,0.25); border-radius: 20px;
+        background: rgba(255, 255, 255, 0.07);
+        -webkit-backdrop-filter: blur(14px);
+        backdrop-filter: blur(14px);
+        border: 1px solid rgba(230, 236, 242, 0.2); border-radius: 20px;
         padding: 36px 28px; max-width: 380px;
       }
-      h1 { font-size: 20px; margin: 16px 0 8px; }
-      p { font-size: 14px; line-height: 1.7; opacity: 0.9; margin: 0 0 22px; }
+      .brand { font-size: 19px; font-weight: 800; margin: 14px 0 2px; letter-spacing: 0.2px; }
+      /* Orange as small text, on navy — 6.14:1. Never do this on white. */
+      .descriptor { font-size: 12px; font-weight: 700; color: var(--orange-text); margin: 0 0 18px; }
+      h1 { font-size: 20px; margin: 0 0 8px; font-weight: 800; }
+      p { font-size: 14px; line-height: 1.75; color: var(--dim); margin: 0 0 22px; }
       button {
-        background: #fff; color: #5b21b6; border: none; border-radius: 999px;
-        padding: 12px 28px; font-size: 14px; font-weight: 700; cursor: pointer;
+        background: var(--orange); color: var(--navy); border: none; border-radius: 999px;
+        padding: 12px 28px; font-size: 14px; font-weight: 800; cursor: pointer;
+        font-family: inherit;
       }
+      button:focus-visible { outline: 3px solid var(--mist); outline-offset: 3px; }
       .logo { width: 64px; height: 64px; }
     </style>
   </head>
   <body>
     <div class="card">
-      <svg class="logo" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-        <rect width="512" height="512" rx="112" fill="rgba(255,255,255,0.15)"/>
-        <path d="M256 104 L360 400 L306 400 L286 340 L226 340 L206 400 L152 400 Z M241 296 L271 296 L256 250 Z" fill="#fff"/>
+      <svg class="logo" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ميسور">
+        <path d="M136 250 A120 120 0 0 1 376 250" fill="none" stroke="#E6ECF2" stroke-width="26" stroke-linecap="round" />
+        <rect x="112" y="236" width="52" height="86" rx="26" fill="#FF6A00" />
+        <rect x="348" y="236" width="52" height="86" rx="26" fill="#E6ECF2" />
+        <path
+          d="M186 196 H326 a34 34 0 0 1 34 34 v92 a34 34 0 0 1 -34 34 h-74
+             l-46 40 v-40 h-20 a34 34 0 0 1 -34 -34 v-92 a34 34 0 0 1 34 -34 z"
+          fill="#FFFFFF"
+        />
+        <circle cx="252" cy="246" r="31" fill="none" stroke="#0D2C4D" stroke-width="21" />
+        <path
+          d="M283 246 h14 a22 22 0 0 1 22 22 v52 a26 26 0 0 1 -26 26 h-18"
+          fill="none" stroke="#0D2C4D" stroke-width="21" stroke-linecap="round" stroke-linejoin="round"
+        />
       </svg>
+      <div class="brand">ميسور</div>
+      <div class="descriptor">خدمة العملاء الذكية</div>
       <h1>لا يوجد اتصال بالإنترنت</h1>
-      <p>تطبيق Atlas يحتاج اتصالاً بالشبكة لعرض المحادثات والطلبات المحدّثة. تحقّق من اتصالك ثم أعد المحاولة.</p>
+      <p>يحتاج تطبيق ميسور اتصالاً بالشبكة لعرض المحادثات والطلبات المحدّثة. تحقّق من اتصالك ثم أعد المحاولة.</p>
       <button onclick="location.reload()">إعادة المحاولة</button>
     </div>
   </body>

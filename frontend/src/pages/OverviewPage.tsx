@@ -54,7 +54,7 @@ export function OverviewPage() {
         {stores?.map((s, i) => (
           <div
             key={s.id}
-            className="card card-hover atlas-enter"
+            className="card card-hover ms-enter"
             style={{ padding: "18px 20px", cursor: "pointer", animationDelay: `${Math.min(i, 6) * 40}ms` }}
             onClick={() => {
               setActiveStoreId(s.id);

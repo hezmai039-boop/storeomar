@@ -10,13 +10,19 @@ interface StoreContextValue {
 
 const StoreContext = createContext<StoreContextValue | null>(null);
 
+// Renamed with the rebrand and NOT migrated. This is a UI preference, and
+// the effect below already repairs an absent/unknown value on first render —
+// an owner lands on the cross-store overview, anyone else on their first
+// store — so the one-time reset costs a single click at most.
+const ACTIVE_STORE_KEY = "maysoor_active_store";
+
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const { me } = useAuth();
-  const [activeStoreId, setActiveStoreId] = useState<string | null>(() => localStorage.getItem("atlas_active_store"));
+  const [activeStoreId, setActiveStoreId] = useState<string | null>(() => localStorage.getItem(ACTIVE_STORE_KEY));
 
   useEffect(() => {
-    if (activeStoreId) localStorage.setItem("atlas_active_store", activeStoreId);
-    else localStorage.removeItem("atlas_active_store");
+    if (activeStoreId) localStorage.setItem(ACTIVE_STORE_KEY, activeStoreId);
+    else localStorage.removeItem(ACTIVE_STORE_KEY);
   }, [activeStoreId]);
 
   // If the remembered store isn't in this user's list anymore, fall back.

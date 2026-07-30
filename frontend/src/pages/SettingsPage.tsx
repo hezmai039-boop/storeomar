@@ -315,7 +315,7 @@ export function SettingsPage() {
         </p>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 14, marginBottom: 18 }}>
           {channels.map((c, i) => (
-            <div key={c.id} className="card card-hover atlas-enter" style={{ padding: 16, animationDelay: `${Math.min(i, 6) * 40}ms` }}>
+            <div key={c.id} className="card card-hover ms-enter" style={{ padding: 16, animationDelay: `${Math.min(i, 6) * 40}ms` }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
                 <BrandTile brand={c.channelType.key} />
                 <span style={{ fontWeight: 700, fontSize: 13.5 }}>{c.displayName}</span>
@@ -378,7 +378,7 @@ export function SettingsPage() {
         </div>
 
         {lastVerifyToken && (
-          <div className="card atlas-enter" style={{ padding: 16, marginBottom: 18, borderColor: "var(--good)", boxShadow: "0 8px 24px rgba(22,163,74,0.15)" }}>
+          <div className="card ms-enter" style={{ padding: 16, marginBottom: 18, borderColor: "var(--good)", boxShadow: "0 8px 24px rgba(22,163,74,0.15)" }}>
             <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>
               أدخل هذين في لوحة Meta (تبويب Configuration → Webhook) الآن — رمز التحقق لن يُعرض تلقائيًا مرة أخرى
             </div>
@@ -551,7 +551,7 @@ export function SettingsPage() {
         <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>سلة، زد، Shopify، WooCommerce.</p>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 14, marginBottom: 18 }}>
           {integrations.map((i, idx) => (
-            <div key={i.id} className="card card-hover atlas-enter" style={{ padding: 16, animationDelay: `${Math.min(idx, 6) * 40}ms` }}>
+            <div key={i.id} className="card card-hover ms-enter" style={{ padding: 16, animationDelay: `${Math.min(idx, 6) * 40}ms` }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
                 <BrandTile brand={i.platform} />
                 <span style={{ fontWeight: 700, fontSize: 13.5 }}>{i.platform}</span>

@@ -21,12 +21,27 @@ export function LogoMark({
   tone?: "brand" | "light" | "mono";
   title?: string;
 }) {
-  // currentColor in "mono" so the mark takes the colour of the text beside it.
-  const shell = tone === "light" ? "#FFFFFF" : tone === "mono" ? "currentColor" : "#0D2C4D";
-  const bubble = tone === "light" ? "#FFFFFF" : tone === "mono" ? "currentColor" : "#0D2C4D";
-  const bubbleFill = tone === "light" ? "#0D2C4D" : "none";
-  const accent = tone === "mono" ? "currentColor" : "#FF6A00";
-  const band = tone === "light" ? "#E6ECF2" : tone === "mono" ? "currentColor" : "#1E5A8A";
+  // The bubble is the mark's silhouette — lose it and the ‏م‏ floats loose and
+  // the "customer service" idea goes with it. So each tone decides how the
+  // bubble reads against ITS background, and the letter follows:
+  //
+  //   light — on navy. SOLID WHITE bubble with a NAVY ‏م‏ inside, exactly as
+  //           public/icon.svg draws it. An earlier version filled the bubble
+  //           navy here, which made it disappear into the page and left the
+  //           letter hanging in space.
+  //   brand — on white. OUTLINED navy bubble; a solid one would be a heavy
+  //           navy blob at 32px.
+  //   mono  — everything inherits currentColor, so the bubble has to be an
+  //           outline (a solid fill would swallow the letter drawn in the
+  //           same colour).
+  const isLight = tone === "light";
+  const isMono = tone === "mono";
+  // The ‏م‏ itself: navy inside the white bubble, otherwise the bubble's colour.
+  const shell = isLight ? "#0D2C4D" : isMono ? "currentColor" : "#0D2C4D";
+  const bubbleStroke = isLight ? "none" : isMono ? "currentColor" : "#0D2C4D";
+  const bubbleFill = isLight ? "#FFFFFF" : "none";
+  const accent = isMono ? "currentColor" : "#FF6A00";
+  const band = isLight ? "#E6ECF2" : isMono ? "currentColor" : "#1E5A8A";
 
   return (
     <svg
@@ -48,8 +63,8 @@ export function LogoMark({
         d="M186 196 H326 a34 34 0 0 1 34 34 v92 a34 34 0 0 1 -34 34 h-74
            l-46 40 v-40 h-20 a34 34 0 0 1 -34 -34 v-92 a34 34 0 0 1 34 -34 z"
         fill={bubbleFill}
-        stroke={bubble}
-        strokeWidth={tone === "light" ? 0 : 22}
+        stroke={bubbleStroke}
+        strokeWidth={isLight ? 0 : 22}
         strokeLinejoin="round"
       />
       {/* ‏م‏ — bowl then descender. Kept byte-for-byte in step with
