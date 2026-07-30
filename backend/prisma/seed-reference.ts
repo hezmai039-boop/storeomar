@@ -90,7 +90,19 @@ for (const def of channelTypeDefs) {
 // list the derived quotas *and* this array, so every plan showed each limit
 // twice. The columns are the single source of truth for a number; this array
 // is the marketing copy beside them.
-const planDefs = [
+//
+// The customer-facing `name` does NOT say "شهري"/"سنوي", for the same reason
+// `features` does not restate the quotas: the interval is a column, and text
+// that restates a column is text that can contradict it. Every surface derives
+// the interval label from `interval`. (`nameEn` is the one exception — it is
+// an internal/latin label, and "Basic" twice in a row in the plans table is
+// unreadable when you are looking at the row you are about to charge.)
+//
+// sortOrder leaves a gap after each paid tier so the yearly twin can sit
+// immediately beside its monthly one (free 1 · basic 2/3 · pro 4/5) — the
+// landing page pairs them by key, but a human reading the table should see
+// the pair adjacent too.
+const monthlyPlanDefs = [
   {
     key: "free",
     name: "المجانية",
@@ -121,15 +133,55 @@ const planDefs = [
     maxStores: null,
     maxUsers: null,
     maxAiRepliesMonthly: 20000,
-    sortOrder: 3,
+    sortOrder: 4,
     features: ["ذكاء الأعمال المتقدّم", "ربط سلة وزد", "دعم مخصص وأولوية في الرد"],
   },
+];
+
+/**
+ * Pay for this many months, get twelve. 10 → two months free, which is the
+ * offer the market prices against. The saving is never written as prose
+ * anywhere: every surface computes `monthly × 12 − yearly` from these rows,
+ * so changing this one number changes what the landing page claims.
+ */
+const YEARLY_MONTHS_CHARGED = 10;
+
+// Yearly counterparts, DERIVED from their monthly twin rather than written
+// out a second time. Quotas that drifted apart between `basic` and
+// `basic_yearly` would be an invisible bug — the customer pays for a year and
+// silently gets a different product — so there is only one place to edit them.
+//
+// NO `free_yearly`, deliberately: a plan that costs nothing has no billing
+// period worth choosing, and `getEffectivePlan()` (modules/billing/service.ts)
+// plus POST /v1/billing/subscribe both look the free plan up by the literal
+// key "free". A second free row would be a plan nothing can ever select, and
+// the landing page would show the visitor a choice with no difference behind
+// it. The free tier renders in BOTH tabs instead — see LandingPage.tsx.
+const yearlyPlanDefs = monthlyPlanDefs
+  .filter((def) => def.priceHalalas > 0)
+  .map((def) => ({
+    ...def,
+    key: `${def.key}_yearly`,
+    nameEn: `${def.nameEn} (Yearly)`,
+    priceHalalas: def.priceHalalas * YEARLY_MONTHS_CHARGED,
+    // Adjacent to its monthly twin, which is why the monthly tiers skip a number.
+    sortOrder: def.sortOrder + 1,
+    interval: "yearly" as const,
+  }));
+
+const planDefs = [
+  ...monthlyPlanDefs.map((def) => ({ ...def, interval: "monthly" as const })),
+  ...yearlyPlanDefs,
 ];
 const planByKey = new Map<string, { id: string }>();
 for (const def of planDefs) {
   const plan = await prisma.plan.upsert({
     where: { key: def.key },
-    create: { ...def, currency: "SAR", interval: "monthly", isActive: true },
+    create: { ...def, currency: "SAR", isActive: true },
+    // `interval`, `currency` and `isActive` stay out of the update on purpose:
+    // they are the row's identity and its live state. Re-seeding must not
+    // un-hide a plan an operator deactivated, and a key's interval cannot
+    // change without becoming a different plan.
     update: {
       name: def.name,
       nameEn: def.nameEn,

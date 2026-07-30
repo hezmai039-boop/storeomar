@@ -149,7 +149,13 @@ export interface SimulationLink {
 
 export interface Plan {
   id: string;
-  key: "free" | "basic" | "pro";
+  // A plain string, not a union of the seeded keys. The catalogue is DATA —
+  // prisma/seed-reference.ts now derives `basic_yearly` / `pro_yearly` from
+  // their monthly twins, and a union here would have to be edited every time
+  // a tier or a billing cycle is added, which makes this file the thing that
+  // rejects a row the API happily returned. Only "free" is special-cased
+  // anywhere, and that is enforced in the backend.
+  key: string;
   name: string;
   nameEn: string;
   priceHalalas: number;

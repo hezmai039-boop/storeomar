@@ -1,4 +1,4 @@
-import { CSSProperties, FormEvent, useCallback, useEffect, useState } from "react";
+import { CSSProperties, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiClientError } from "../api/client";
 import type {
   AdminInvoice,
@@ -35,6 +35,60 @@ function formatDate(iso: string | null): string {
 /** null on any quota field means unlimited — never render it as 0. */
 function formatLimit(limit: number | null): string {
   return limit === null ? "غير محدود" : String(limit);
+}
+
+type BillingInterval = "monthly" | "yearly";
+
+/** The interval, said in words. Always derived from the column, never from
+ *  the plan's key or its name — those are labels, this is the fact that
+ *  decides what a period costs and how long it lasts. */
+function intervalLabel(interval: string): string {
+  return interval === "yearly" ? "سنوي" : "شهري";
+}
+function intervalAdverb(interval: string): string {
+  return interval === "yearly" ? "سنويًا" : "شهريًا";
+}
+/** What one `periods` unit means for this plan — the word the activation form
+ *  needs so "٢ دورات" cannot be read as two months on a yearly plan. */
+function periodNoun(interval: string, n: number): string {
+  if (interval === "yearly") return n === 1 ? "سنة" : n === 2 ? "سنتان" : `${n} سنوات`;
+  return n === 1 ? "شهر" : n === 2 ? "شهران" : `${n} أشهر`;
+}
+
+/**
+ * Tier → its monthly and yearly rows. Same rule as the landing page: pair by
+ * the key prefix, but bucket by `interval`, and a tier sold at only one
+ * interval (the free plan) shows in BOTH tabs rather than disappearing from
+ * one. Five flat cards with two pairs of near-identical names is how an owner
+ * clicks "ترقية" on the wrong one.
+ */
+interface PlanGroup {
+  base: string;
+  monthly: Plan | null;
+  yearly: Plan | null;
+}
+
+const YEARLY_SUFFIX = "_yearly";
+
+function groupPlans(plans: Plan[]): PlanGroup[] {
+  const groups: PlanGroup[] = [];
+  const byBase = new Map<string, PlanGroup>();
+  for (const plan of plans) {
+    const base = plan.key.endsWith(YEARLY_SUFFIX) ? plan.key.slice(0, -YEARLY_SUFFIX.length) : plan.key;
+    let group = byBase.get(base);
+    if (!group) {
+      group = { base, monthly: null, yearly: null };
+      byBase.set(base, group);
+      groups.push(group);
+    }
+    if (plan.interval === "yearly") group.yearly ??= plan;
+    else group.monthly ??= plan;
+  }
+  return groups;
+}
+
+function planFor(group: PlanGroup, interval: BillingInterval): Plan | null {
+  return interval === "yearly" ? (group.yearly ?? group.monthly) : (group.monthly ?? group.yearly);
 }
 
 const SUBSCRIPTION_STATUS: Record<SubscriptionStatus, { label: string; badge: string }> = {
@@ -92,6 +146,10 @@ export function BillingPage() {
   const [overview, setOverview] = useState<BillingOverview | null>(null);
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [invoices, setInvoices] = useState<Invoice[] | null>(null);
+  // Which billing cycle the plan grid is showing. Snapped to the subscriber's
+  // OWN cycle on load, so an owner already on a yearly plan does not open the
+  // page to a monthly grid where "باقتك الحالية" appears on nothing.
+  const [planInterval, setPlanInterval] = useState<BillingInterval>("monthly");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -129,6 +187,7 @@ export function BillingPage() {
       setOverview(sub.data);
       setPlans([...plan.data].sort((a, b) => a.sortOrder - b.sortOrder));
       setInvoices(inv.data);
+      if (sub.data.plan) setPlanInterval(sub.data.plan.interval === "yearly" ? "yearly" : "monthly");
       setError(null);
     } catch (err) {
       setError(err instanceof ApiClientError ? err.message : "تعذّر تحميل بيانات الاشتراك");
@@ -320,6 +379,16 @@ export function BillingPage() {
   const usage = overview?.usage ?? null;
   const currentPlan = overview?.plan ?? null;
   const subscription = overview?.subscription ?? null;
+  const planGroups = useMemo(() => groupPlans(plans ?? []), [plans]);
+  const hasYearlyPlan = planGroups.some((g) => g.yearly !== null);
+  const shownPlans = planGroups
+    .map((g) => planFor(g, hasYearlyPlan ? planInterval : "monthly"))
+    .filter((p): p is Plan => p !== null);
+  // The plan the activation form is pointed at, so the form can say what a
+  // "period" costs and how long it lasts before anyone presses the button.
+  const activatePlanRow = plans?.find((p) => p.key === activateForm.planKey) ?? null;
+  const activatePeriods = Math.max(1, Number(activateForm.periods) || 1);
+
   const percent = usage ? Math.max(0, Math.round(usage.percentUsed)) : 0;
   const overQuota = !!usage && usage.limit !== null && usage.percentUsed >= 100;
   const barColor = percent >= 100 ? "var(--critical)" : percent >= 80 ? "var(--warn)" : "var(--primary)";
@@ -352,7 +421,7 @@ export function BillingPage() {
               </div>
               <div style={{ fontSize: 12.5, color: "var(--text-dim)", marginTop: 4 }}>
                 {currentPlan
-                  ? `${formatSar(currentPlan.priceHalalas)} / ${currentPlan.interval === "yearly" ? "سنويًا" : "شهريًا"}`
+                  ? `${formatSar(currentPlan.priceHalalas)} / ${intervalAdverb(currentPlan.interval)}`
                   : "اختر باقة من الأسفل لتفعيل الردود الآلية."}
               </div>
             </div>
@@ -460,11 +529,40 @@ export function BillingPage() {
 
         {plans && plans.length === 0 && <div style={{ color: "var(--text-dim)", fontSize: 13 }}>لا باقات متاحة حاليًا.</div>}
 
+        {/* Only when something is actually sold yearly — a tab with nothing
+            behind it punishes whoever presses it. --primary carries the ON
+            state via .btn-primary; the orange belongs to a single conversion
+            action and is not an "active" colour (docs/32-brand.md §1). */}
+        {hasYearlyPlan && (
+          <div role="radiogroup" aria-label="دورة الفوترة" style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            {(["monthly", "yearly"] as const).map((cycle) => (
+              <button
+                key={cycle}
+                type="button"
+                role="radio"
+                aria-checked={planInterval === cycle}
+                className={`btn btn-sm ${planInterval === cycle ? "btn-primary" : "btn-ghost"}`}
+                onClick={() => setPlanInterval(cycle)}
+              >
+                {intervalLabel(cycle)}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 14 }}>
-          {plans?.map((p) => {
+          {shownPlans.map((p) => {
             const isCurrent = currentPlan?.key === p.key;
             const busyKey = `plan:${p.key}`;
-            const label = !currentPlan ? "اشترك" : p.priceHalalas > currentPlan.priceHalalas ? "ترقية" : "تغيير الباقة";
+            // "ترقية" only compares prices on the SAME cycle. 2,990 ر.س/سنة is
+            // a bigger number than 799 ر.س/شهر but a cheaper product, and
+            // labelling a sideways move as an upgrade is the button that gets
+            // pressed by mistake.
+            const label = !currentPlan
+              ? "اشترك"
+              : p.interval === currentPlan.interval && p.priceHalalas > currentPlan.priceHalalas
+                ? "ترقية"
+                : "تغيير الباقة";
             return (
               <div
                 key={p.id}
@@ -475,9 +573,22 @@ export function BillingPage() {
                   <b style={{ fontSize: 15 }}>{p.name}</b>
                   {isCurrent && <span className="badge badge-info">باقتك الحالية</span>}
                 </div>
-                <div className="mono" style={{ fontSize: 18 }}>
-                  {formatSar(p.priceHalalas)}
-                  <span style={{ fontSize: 12, color: "var(--text-dim)" }}> / {p.interval === "yearly" ? "سنويًا" : "شهريًا"}</span>
+                <div>
+                  <div className="mono" style={{ fontSize: 18 }}>
+                    {formatSar(p.priceHalalas)}
+                    <span style={{ fontSize: 12, color: "var(--text-dim)" }}> / {intervalAdverb(p.interval)}</span>
+                  </div>
+                  {p.interval === "yearly" && (
+                    <div style={{ fontSize: 11.5, color: "var(--text-faint)", marginTop: 2 }}>
+                      ما يعادل {formatSar(p.priceHalalas / 12)} شهريًا
+                    </div>
+                  )}
+                  {/* A tier sold at one price only (the free plan) still shows
+                      in both tabs — say so instead of leaving it looking like
+                      the toggle did nothing. */}
+                  {p.interval !== "yearly" && planInterval === "yearly" && p.priceHalalas > 0 && (
+                    <div style={{ fontSize: 11.5, color: "var(--text-faint)", marginTop: 2 }}>بسعر واحد — لا دورة سنوية</div>
+                  )}
                 </div>
                 <ul style={{ margin: 0, paddingInlineStart: 18, fontSize: 12.5, color: "var(--text-dim)", lineHeight: 1.9 }}>
                   <li>الردود الآلية: {formatLimit(p.maxAiRepliesMonthly)}</li>
@@ -710,7 +821,13 @@ export function BillingPage() {
                           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                             <b style={{ fontSize: 14.5 }}>{r.name}</b>
                             <span className={`badge ${meta.badge}`}>{meta.label}</span>
-                            <span style={{ fontSize: 12, color: "var(--text-dim)" }}>يطلب: {planName}</span>
+                            {/* The cycle, not just the tier: two leads reading
+                                "يطلب: الاحترافية" can mean 799 or 7,990 ر.س,
+                                and this is the line the call is made from. */}
+                            <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                              يطلب: {planName}
+                              {r.plan ? ` — ${intervalLabel(r.plan.interval)}` : ""}
+                            </span>
                           </div>
                           <div style={{ marginTop: 6, display: "flex", gap: 14, flexWrap: "wrap", fontSize: 12.5, color: "var(--text-dim)" }}>
                             <a className="mono" dir="ltr" href={`mailto:${r.email}`}>
@@ -792,15 +909,26 @@ export function BillingPage() {
                               onChange={(e) => setActivateForm((f) => ({ ...f, planKey: e.target.value }))}
                               required
                             >
+                              {/* Every plan, ungrouped — this is the one place
+                                  that must not hide a row behind a tab. The
+                                  interval is IN the label because "الاحترافية
+                                  — 799.00 ر.س" and "الاحترافية — 7,990.00 ر.س"
+                                  are one careless click apart, and the wrong
+                                  click charges a year or gives one away. */}
                               {plans?.map((p) => (
                                 <option key={p.key} value={p.key}>
-                                  {p.name} — {formatSar(p.priceHalalas)}
+                                  {p.name} — {intervalLabel(p.interval)} — {formatSar(p.priceHalalas)}
                                 </option>
                               ))}
                             </select>
                           </label>
-                          <label style={{ ...fieldStyle(), minWidth: 110, flex: "0 0 110px" }}>
-                            عدد الدورات
+                          <label style={{ ...fieldStyle(), minWidth: 140, flex: "0 0 140px" }}>
+                            {/* The unit is in the label, not only in the help
+                                text: a "دورة" is a MONTH on a monthly plan and
+                                a YEAR on a yearly one, and that is the whole
+                                difference between selling twelve months and
+                                giving away twelve years. */}
+                            عدد الدورات ({activatePlanRow ? (activatePlanRow.interval === "yearly" ? "سنة" : "شهر") : "دورة"})
                             <input
                               type="number"
                               min={1}
@@ -838,6 +966,17 @@ export function BillingPage() {
                           <p style={{ flexBasis: "100%", margin: 0, fontSize: 11.5, color: "var(--text-faint)", lineHeight: 1.8 }}>
                             سيصدر هذا فاتورة <b>مدفوعة</b> بالمبلغ أعلاه ويمدّد اشتراك المؤسسة — نفّذه بعد وصول المبلغ فعلًا.
                             المدة تُضاف إلى نهاية الدورة الحالية، فلا يضيع ما تبقّى للعميل.
+                            {activatePlanRow && (
+                              <>
+                                {" "}
+                                <b>
+                                  «عدد الدورات» يُحسب بدورة الباقة المختارة لا بالأشهر: هذه الباقة{" "}
+                                  {intervalLabel(activatePlanRow.interval)}، فـ{activatePeriods} ={" "}
+                                  {periodNoun(activatePlanRow.interval, activatePeriods)} بقيمة{" "}
+                                  {formatSar(activatePlanRow.priceHalalas * activatePeriods)}.
+                                </b>
+                              </>
+                            )}
                           </p>
                         </form>
                       )}
