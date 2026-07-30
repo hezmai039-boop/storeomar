@@ -47,11 +47,25 @@ function vatPercent(): number {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
 }
 
-/** Monthly plans bill a month at a time; yearly ones a year. */
+/**
+ * Monthly plans bill a month at a time; yearly ones a year.
+ *
+ * The day is clamped to the target month's length. A bare
+ * `setMonth(getMonth() + 1)` on Jan 31 rolls over to Mar 3 — JavaScript
+ * normalises Feb 31 forward — so subscribing on the 29th to 31st silently
+ * bought ~34 days, every month, forever.
+ */
 function periodEndFor(start: Date, interval: string): Date {
   const end = new Date(start);
-  if (interval === "yearly") end.setFullYear(end.getFullYear() + 1);
-  else end.setMonth(end.getMonth() + 1);
+  const day = end.getDate();
+  if (interval === "yearly") {
+    end.setFullYear(end.getFullYear() + 1);
+  } else {
+    end.setDate(1); // avoid the overflow before changing the month
+    end.setMonth(end.getMonth() + 1);
+    const lastDayOfTarget = new Date(end.getFullYear(), end.getMonth() + 1, 0).getDate();
+    end.setDate(Math.min(day, lastDayOfTarget));
+  }
   return end;
 }
 

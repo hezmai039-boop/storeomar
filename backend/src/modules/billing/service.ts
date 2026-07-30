@@ -113,15 +113,32 @@ export async function checkQuota(
  */
 export async function recordAiUsage(
   organizationId: string,
-  usage: { inputTokens: number; outputTokens: number; costMicroUsd: number }
+  usage: {
+    /**
+     * Whether this event consumed one of the plan's monthly replies.
+     *
+     * Separate from the token figures on purpose: a reply served without an
+     * API key, a greeting shortcut, or an escalation acknowledgment all cost
+     * the platform nothing in tokens but are exactly what the customer
+     * bought a quota of. Tying the count to token spend made
+     * maxAiRepliesMonthly unenforceable on any key-less deployment.
+     * Defaults true so a caller that only reports cost still counts.
+     */
+    countReply?: boolean;
+    inputTokens: number;
+    outputTokens: number;
+    costMicroUsd: number;
+  }
 ): Promise<void> {
   const period = currentPeriod();
   const where = { organizationId_period: { organizationId, period } };
+  const replies = usage.countReply === false ? 0 : 1;
+  const nonNegative = (n: number) => BigInt(Math.max(0, Math.round(Number.isFinite(n) ? n : 0)));
   const increment = {
-    aiReplies: { increment: 1 },
-    inputTokens: { increment: BigInt(Math.max(0, Math.round(usage.inputTokens))) },
-    outputTokens: { increment: BigInt(Math.max(0, Math.round(usage.outputTokens))) },
-    costMicroUsd: { increment: BigInt(Math.max(0, Math.round(usage.costMicroUsd))) },
+    aiReplies: { increment: replies },
+    inputTokens: { increment: nonNegative(usage.inputTokens) },
+    outputTokens: { increment: nonNegative(usage.outputTokens) },
+    costMicroUsd: { increment: nonNegative(usage.costMicroUsd) },
   };
 
   try {
@@ -130,10 +147,10 @@ export async function recordAiUsage(
       create: {
         organizationId,
         period,
-        aiReplies: 1,
-        inputTokens: BigInt(Math.max(0, Math.round(usage.inputTokens))),
-        outputTokens: BigInt(Math.max(0, Math.round(usage.outputTokens))),
-        costMicroUsd: BigInt(Math.max(0, Math.round(usage.costMicroUsd))),
+        aiReplies: replies,
+        inputTokens: nonNegative(usage.inputTokens),
+        outputTokens: nonNegative(usage.outputTokens),
+        costMicroUsd: nonNegative(usage.costMicroUsd),
       },
       update: increment,
     });

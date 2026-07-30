@@ -103,6 +103,12 @@ model User {
   // the only thing that gates the billing admin routes, and nothing in the
   // API can set it — it is granted by the seed or by hand in the DB.
   isPlatformAdmin Boolean  @default(false) @map("is_platform_admin")
+  // Bumped whenever the password changes. JWTs are stateless and live 8h,
+  // so without this a stolen token keeps working for up to 8 hours AFTER
+  // the victim performs the recovery action whose whole purpose is to evict
+  // the attacker. Carried in the token and compared on every request, so a
+  // password change invalidates every session that user had open.
+  tokenVersion    Int      @default(0) @map("token_version")
   lastLoginAt    DateTime? @map("last_login_at") @db.Timestamptz(6)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -639,6 +645,17 @@ model AiOrchestratorRun {
   confidence        Decimal? @db.Decimal(3, 2)
   escalated         Boolean  @default(false)
   replyText         String?  @map("reply_text")
+  // Per-RUN provider cost. ai_response_logs carries the same totals for the
+  // reply, but only the run row knows how many round trips it took — which
+  // is what tells you whether a store is expensive because of traffic or
+  // because its tool loop keeps going. Nullable: a run with no API key, or
+  // one that failed before any call, spent nothing knowable, and 0 would
+  // read as "this was free".
+  inputTokens       Int?     @map("input_tokens")
+  outputTokens      Int?     @map("output_tokens")
+  costMicroUsd      Int?     @map("cost_micro_usd")
+  model             String?
+  roundTrips        Int?     @map("round_trips")
   createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   store        Store        @relation(fields: [storeId], references: [id])

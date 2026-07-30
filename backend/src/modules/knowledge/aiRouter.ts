@@ -190,12 +190,30 @@ export async function completeAiReply(
  * process down mid-conversation.
  */
 function meter(context: AiReplyContext, result: AiPipelineResult): AiPipelineResult {
-  if (result.usage && context.organizationId) {
-    void recordAiUsage(context.organizationId, {
-      inputTokens: result.usage.inputTokens,
-      outputTokens: result.usage.outputTokens,
-      costMicroUsd: result.usage.costMicroUsd,
-    }).catch((err) => console.error("[aiRouter] recordAiUsage failed:", err));
-  }
+  if (!context.organizationId) return result;
+
+  // Counted whenever an automated reply was actually produced — NOT only
+  // when the provider billed us for it.
+  //
+  // These had been the same condition, which quietly broke the plan's own
+  // promise. `usage` is absent for a reply served without ANTHROPIC_API_KEY
+  // (the documented key-less default), for the greeting shortcut, and for a
+  // low-confidence escalation acknowledgment. So a deployment with no API
+  // key never incremented aiReplies at all and maxAiRepliesMonthly never
+  // bound — the free plan's "100 ردًا ذكيًا شهريًا" was unlimited — while
+  // even with a key every greeting and every ack was a free automated
+  // reply. The customer bought a number of replies, so that is what the
+  // counter has to count; token cost is a separate fact about the same
+  // event, and stays absent when it is genuinely unknown.
+  const replied = !!result.replyText;
+  if (!replied && !result.usage) return result;
+
+  void recordAiUsage(context.organizationId, {
+    countReply: replied,
+    inputTokens: result.usage?.inputTokens ?? 0,
+    outputTokens: result.usage?.outputTokens ?? 0,
+    costMicroUsd: result.usage?.costMicroUsd ?? 0,
+  }).catch((err) => console.error("[aiRouter] recordAiUsage failed:", err));
+
   return result;
 }

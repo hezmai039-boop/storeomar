@@ -13,6 +13,7 @@ import { accessibleStoreIdsFor } from "../../middleware/rbac";
 import { writeAudit } from "../../lib/audit";
 import { ROLES } from "../../lib/permissions";
 import { env } from "../../config/env";
+import { captureError } from "../../lib/observability";
 import { consumeToken, issueToken, TOKEN_TTL_MINUTES } from "../../lib/authTokens";
 import { sendEmail } from "../../lib/email/registry";
 import { passwordResetEmail, passwordResetLink, verificationEmail, verificationLink } from "../../lib/email/templates";
@@ -44,7 +45,11 @@ identityRouter.post(
       });
     });
 
-    const token = signToken({ userId: user.id, organizationId: user.organizationId });
+    const token = signToken({
+      userId: user.id,
+      organizationId: user.organizationId,
+      tokenVersion: user.tokenVersion,
+    });
     res.json({ data: { token } });
   })
 );
@@ -72,7 +77,14 @@ identityRouter.post(
     if (!valid) throw ApiError.unauthorized("كلمة المرور الحالية غير صحيحة");
 
     const passwordHash = await bcrypt.hash(body.newPassword, 10);
-    await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
+    // Bumping tokenVersion is what makes this a real security action rather
+    // than a cosmetic one: every JWT already issued for this user stops
+    // working on the next request, including the caller's own — and
+    // including whichever session prompted the change.
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash, tokenVersion: { increment: 1 } },
+    });
     await withStoreContext([], async (tx) => {
       await writeAudit(tx, {
         organizationId: user.organizationId,
@@ -462,9 +474,23 @@ identityRouter.post(
     // Outside the transaction on purpose: issuing the token writes a row
     // and sending crosses the network, and neither is worth holding a
     // transaction open for — nor worth rolling a real tenant back over.
-    await sendVerificationEmail(created.user);
+    // Caught, not just awaited. sendEmail already swallows provider
+    // failures, but issueToken writes a row — and a transient DB error there
+    // throws AFTER the organization, store, user and subscription are
+    // committed. The customer would see a 500 on a signup that actually
+    // succeeded, retry, and hit 409 "email already registered": locked out
+    // of an account they own. They can request a fresh link from Account.
+    try {
+      await sendVerificationEmail(created.user);
+    } catch (err) {
+      captureError(err, { scope: "auth.signup.verification_email", userId: created.user.id });
+    }
 
-    const token = signToken({ userId: created.user.id, organizationId: created.organization.id });
+    const token = signToken({
+      userId: created.user.id,
+      organizationId: created.organization.id,
+      tokenVersion: 0,
+    });
     res.status(201).json({
       data: {
         token,
@@ -592,7 +618,14 @@ identityRouter.post(
     if (!claim) throw ApiError.badRequest("رابط إعادة التعيين غير صالح أو منتهي الصلاحية — اطلب رابطًا جديدًا");
 
     const passwordHash = await bcrypt.hash(body.newPassword, 10);
-    const user = await prisma.user.update({ where: { id: claim.userId }, data: { passwordHash } });
+    // Same tokenVersion bump as change-password, and it matters more here:
+    // a reset is performed precisely because someone else may hold the
+    // account. Leaving their existing tokens valid for the rest of the 8h
+    // window would defeat the recovery.
+    const user = await prisma.user.update({
+      where: { id: claim.userId },
+      data: { passwordHash, tokenVersion: { increment: 1 } },
+    });
 
     await withStoreContext([], async (tx) => {
       await writeAudit(tx, {

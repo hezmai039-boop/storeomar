@@ -135,7 +135,8 @@ async function logOrchestratorRun(
   context: OrchestratorContext,
   replyText: string | null,
   confidence: OrchestratorConfidence,
-  escalated: boolean
+  escalated: boolean,
+  cost?: { usage: AiReplyUsage; roundTrips: number }
 ) {
   await withStoreContext([context.storeId], (tx) =>
     tx.aiOrchestratorRun.create({
@@ -148,6 +149,18 @@ async function logOrchestratorRun(
         confidence: confidenceToDecimal(confidence),
         escalated,
         replyText,
+        // Spread to nothing when the run spent nothing knowable (no API key,
+        // or a failure before the first call), leaving the nullable columns
+        // NULL rather than a 0 that would read as "this run was free".
+        ...(cost
+          ? {
+              inputTokens: cost.usage.inputTokens,
+              outputTokens: cost.usage.outputTokens,
+              costMicroUsd: cost.usage.costMicroUsd,
+              model: cost.usage.model,
+              roundTrips: cost.roundTrips,
+            }
+          : {}),
       },
     })
   );
@@ -222,8 +235,6 @@ export async function completeOrchestratorRun(context: OrchestratorContext): Pro
   const confidence: OrchestratorConfidence = !result.replyText ? "low" : hasStrongGrounding ? "high" : "medium";
   const escalate = confidence === "low";
 
-  await logOrchestratorRun(context, result.replyText, confidence, escalate);
-
   // Priced here, at the call site, because this is the only place the model
   // id that produced these tokens is known — a later job reading the logs
   // could not re-derive which rate applied. Reuses lib/llmPricing's single
@@ -235,11 +246,15 @@ export async function completeOrchestratorRun(context: OrchestratorContext): Pro
   // each round, so pricing only the last turn would understate exactly the
   // conversations that cost the most.
   //
-  // NOTE: there is deliberately no per-turn breakdown persisted.
-  // ai_orchestrator_runs and ai_tool_invocations have no token/cost columns
-  // today, and prisma/schema.prisma is not ours to change — the run total
-  // rides out on the reply's ai_response_logs row instead, which is what
-  // billing and margin reporting already read.
+  // The totals are ALSO written onto the run row (below), not just onto the
+  // reply's ai_response_logs row. Both matter and they answer different
+  // questions: the reply row is what billing and the margin report read,
+  // while the run row is the only place that knows how many round trips
+  // produced that cost — which is what distinguishes "this store is
+  // expensive because of traffic" from "this store's tool loop keeps
+  // spinning". Without roundTrips beside the cost, a store that quietly
+  // exhausts MAX_TOOL_ROUNDS on every message is indistinguishable from a
+  // busy one.
   const usage: AiReplyUsage | undefined = result.usage
     ? {
         inputTokens: result.usage.inputTokens,
@@ -248,6 +263,18 @@ export async function completeOrchestratorRun(context: OrchestratorContext): Pro
         model: result.model,
       }
     : undefined;
+
+  // Logged after pricing so the run row carries the cost. Deliberately not
+  // awaited-and-thrown: a failure to write the forensic row must not lose a
+  // reply the customer is waiting for, and this row is diagnostics — the
+  // billing-critical copy is on ai_response_logs.
+  await logOrchestratorRun(
+    context,
+    result.replyText,
+    confidence,
+    escalate,
+    usage ? { usage, roundTrips: result.roundTrips } : undefined
+  ).catch((err) => console.error("[orchestrator] logOrchestratorRun failed:", err));
 
   return { replyText: result.replyText, confidence, escalate, toolCalls: result.toolCalls, usage };
 }
