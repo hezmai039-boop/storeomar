@@ -6,8 +6,31 @@ generator client {
 }
 
 datasource db {
-  provider   = "postgresql"
-  url        = env("DATABASE_URL")
+  provider = "postgresql"
+  // Pooled connection for the running app. On Neon (and any PgBouncer in
+  // transaction-pooling mode) this is the `-pooler` host with
+  // `?pgbouncer=true`, which tells Prisma to stop using prepared statements —
+  // PgBouncer cannot carry them across the connections it multiplexes.
+  //
+  // Everything the app does at runtime is compatible with transaction
+  // pooling, and that is not an accident: withStoreContext uses `SET LOCAL`
+  // (transaction-scoped, not session-scoped) and invoice numbering uses
+  // pg_advisory_xact_lock (released at commit) rather than the session-level
+  // pg_advisory_lock. Either of the session variants would silently leak
+  // state onto whichever connection PgBouncer handed out next.
+  url = env("DATABASE_URL")
+  // UNPOOLED connection, used only by the Prisma CLI for migrate/diff.
+  //
+  // Migrations cannot run through a transaction pooler: they take session
+  // advisory locks, issue multi-statement DDL that must land on one backend,
+  // and rely on session state PgBouncer does not preserve. Without this,
+  // `prisma migrate deploy` against a pgbouncer URL fails — or worse,
+  // applies part of a migration and records it as done.
+  //
+  // On Neon this is the same connection string with `-pooler` REMOVED from
+  // the host and without `pgbouncer=true`. Falls back to DATABASE_URL so a
+  // plain local Postgres (no pooler) needs no second variable.
+  directUrl = env("DIRECT_DATABASE_URL")
   extensions = [vector]
 }
 

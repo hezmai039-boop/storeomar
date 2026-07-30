@@ -1,6 +1,22 @@
 #!/bin/sh
 set -e
 
+# prisma/schema.prisma declares directUrl = env("DIRECT_DATABASE_URL") so the
+# CLI can reach the database WITHOUT the connection pooler. Migrations cannot
+# run through PgBouncer in transaction-pooling mode: they take session
+# advisory locks and issue DDL that must land on a single backend.
+#
+# A deployment with no pooler (plain Postgres, local dev) has nothing separate
+# to point at, and Prisma refuses to load the schema at all when the variable
+# is simply missing — every prisma command fails, including the ones below.
+# So default it to DATABASE_URL, and let a pooled deployment override it with
+# the unpooled host.
+if [ -z "$DIRECT_DATABASE_URL" ]; then
+  echo "DIRECT_DATABASE_URL not set — falling back to DATABASE_URL for CLI operations."
+  DIRECT_DATABASE_URL="$DATABASE_URL"
+  export DIRECT_DATABASE_URL
+fi
+
 # migrate deploy, NOT db push. db push reconciles the database to the schema
 # by any means available, including dropping — a column rename is a drop plus
 # a create, so it can silently erase production data with no record of what
