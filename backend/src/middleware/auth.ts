@@ -4,6 +4,20 @@ import { env } from "../config/env";
 import { ApiError } from "../lib/errors";
 import { asyncHandler } from "../lib/asyncHandler";
 import { prisma } from "../db/prisma";
+import { TtlCache } from "../lib/ttlCache";
+
+/**
+ * Cached because the version check runs on EVERY authenticated request, and
+ * an uncached lookup means one extra database round trip per API call — on
+ * Render the database is a separate service across the network, so that is
+ * real added latency on every request for a value that changes only when
+ * someone changes their password.
+ *
+ * Exported so the password-change and reset paths can drop the entry the
+ * instant they bump the version; the 30s TTL is only the ceiling for an
+ * instance that missed the invalidation broadcast.
+ */
+export const sessionCache = new TtlCache<{ tokenVersion: number; status: string } | null>("session", 30_000);
 
 export interface AuthPayload {
   userId: string;
@@ -56,10 +70,12 @@ export const authenticate = asyncHandler(async (req: Request, _res: Response, ne
     return next(ApiError.unauthorized("جلسة غير صالحة أو منتهية"));
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: decoded.userId },
-    select: { tokenVersion: true, status: true },
-  });
+  const user = await sessionCache.get(decoded.userId, () =>
+    prisma.user.findUnique({
+      where: { id: decoded.userId },
+      select: { tokenVersion: true, status: true },
+    })
+  );
   // A deleted or suspended account's tokens stop working here too, instead
   // of staying valid until they happen to expire.
   if (!user || user.status !== "active") {

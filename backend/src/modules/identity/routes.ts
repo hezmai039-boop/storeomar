@@ -7,7 +7,7 @@ import { prisma } from "../../db/prisma";
 import { withStoreContext } from "../../db/withStoreContext";
 import { ApiError } from "../../lib/errors";
 import { asyncHandler } from "../../lib/asyncHandler";
-import { authenticate } from "../../middleware/auth";
+import { authenticate, sessionCache } from "../../middleware/auth";
 import { signToken } from "../../middleware/auth";
 import { accessibleStoreIdsFor } from "../../middleware/rbac";
 import { writeAudit } from "../../lib/audit";
@@ -85,6 +85,9 @@ identityRouter.post(
       where: { id: user.id },
       data: { passwordHash, tokenVersion: { increment: 1 } },
     });
+    // Drop the cached version in the same breath as bumping it, otherwise
+    // the eviction this endpoint exists to perform waits out the TTL.
+    sessionCache.invalidate(user.id);
     await withStoreContext([], async (tx) => {
       await writeAudit(tx, {
         organizationId: user.organizationId,
@@ -626,6 +629,7 @@ identityRouter.post(
       where: { id: claim.userId },
       data: { passwordHash, tokenVersion: { increment: 1 } },
     });
+    sessionCache.invalidate(claim.userId);
 
     await withStoreContext([], async (tx) => {
       await writeAudit(tx, {
