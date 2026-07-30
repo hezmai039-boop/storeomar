@@ -1,11 +1,16 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { api } from "../api/client";
+import type { PublicPlan } from "../api/types";
+import { PlanRequestDialog } from "./PlanRequestDialog";
+import { LogoLockup } from "../components/Logo";
 import "./LandingPage.css";
 
 // The store owner / sales contact the "اطلب متجرك" buttons open — the real
 // business WhatsApp line (international format, no +).
 const CONTACT_WHATSAPP = "966538165467";
-const contactHref = `https://wa.me/${CONTACT_WHATSAPP}?text=${encodeURIComponent("مرحبًا، أرغب في إنشاء متجر على منصة Atlas")}`;
+const contactHref = `https://wa.me/${CONTACT_WHATSAPP}?text=${encodeURIComponent("مرحبًا، أرغب في إنشاء متجر على منصة ميسور")}`;
 
 const FEATURES = [
   { ic: "📥", t: "صندوق وارد موحّد", d: "واتساب وكل قنواتك في شاشة واحدة — لا تنقّل بين تطبيقات." },
@@ -28,9 +33,40 @@ const STATS = [
   { n: "٢٤/٧", l: "لا ينام ولا يغيب" },
 ];
 
+// Prices arrive as integer halalas (SAR × 100). Latin numerals because the
+// rest of the page's figures are, and because a price is copied into a bank
+// transfer.
+const SAR = new Intl.NumberFormat("ar-SA-u-nu-latn", { maximumFractionDigits: 0 });
+
+/** null = unlimited on every quota field. Never render it as 0. */
+function limitText(limit: number | null, unit: string): string {
+  return limit === null ? `${unit} بلا حد` : `${SAR.format(limit)} ${unit}`;
+}
+
 export function LandingPage() {
   const { me } = useAuth();
   const dashboardHref = me ? (me.isOwner ? "/overview" : "/inbox") : "/login";
+
+  // The catalogue comes from the API, not a constant in this file: the whole
+  // point of putting plans on the landing page is that the page and the
+  // billing screen quote the same numbers. A hard-coded price here is a
+  // price that goes stale the first time one is changed in the database.
+  const [plans, setPlans] = useState<PublicPlan[] | null>(null);
+  const [requested, setRequested] = useState<PublicPlan | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    api
+      .get<{ data: PublicPlan[] }>("/v1/public/plans")
+      // An empty array on failure, not an error banner: this is a marketing
+      // page, and a backend hiccup should cost the pricing section, not the
+      // whole page. The WhatsApp contact button below still works.
+      .then((resp) => alive && setPlans(resp.data))
+      .catch(() => alive && setPlans([]));
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   return (
     <div className="lp">
@@ -39,11 +75,9 @@ export function LandingPage() {
 
       <nav className="lp-nav">
         <div className="lp-brand">
-          <div className="mark">A</div>
-          <div className="name">
-            Atlas
-            <small>STORE OPS · AI</small>
-          </div>
+          {/* tone="light" is the navy-background variant — white wordmark,
+              orange descriptor. The mark itself lives in components/Logo. */}
+          <LogoLockup size={38} tone="light" />
         </div>
         {me ? (
           <Link to={dashboardHref} className="lp-btn lp-btn-ghost lp-btn-sm">
@@ -62,11 +96,13 @@ export function LandingPage() {
           متجرك يردّ على عملائه فورًا — <span className="hl">حتى وأنت نائم</span>
         </h1>
         <p className="sub lp-reveal lp-d3">
-          Atlas توحّد واتساب وقنواتك في صندوق واحد، مع مساعد ذكاء اصطناعي يجيب عملاءك بمعرفة متجرك، ويصعّد
+          ميسور توحّد واتساب وقنواتك في صندوق واحد، مع مساعد ذكاء اصطناعي يجيب عملاءك بمعرفة متجرك، ويصعّد
           للفريق البشري عند الحاجة — تجربة خدمة عملاء لا تنقطع.
         </p>
         <div className="lp-hero-cta lp-reveal lp-d4">
-          <a href={contactHref} target="_blank" rel="noopener noreferrer" className="lp-btn lp-btn-primary lp-btn-lg lp-cta-pulse">
+          {/* Orange is spent on exactly one thing per screen — the action that
+              converts. Everything else on this page is blue or glass. */}
+          <a href={contactHref} target="_blank" rel="noopener noreferrer" className="lp-btn lp-btn-accent lp-btn-lg lp-cta-pulse">
             اطلب متجرك الآن
           </a>
           <Link to={me ? dashboardHref : "/login"} className="lp-btn lp-btn-ghost lp-btn-lg">
@@ -106,6 +142,62 @@ export function LandingPage() {
         </div>
       </section>
 
+      {/* Pricing sits after "how it works" and before the stats band: the
+          visitor has just been told what they get and in how many steps,
+          which is the moment a price stops reading as a barrier. Rendered
+          only once the catalogue actually loaded — an empty pricing section
+          is worse than none. */}
+      {plans && plans.length > 0 && (
+        <section className="lp-section" id="plans">
+          <h2>باقات تناسب متجرك</h2>
+          <p className="lead">
+            اختر باقتك واترك بياناتك — نتواصل معك للاتفاق على طريقة الدفع ونفعّل حسابك. لا حاجة لبطاقة، ولا يُخصم منك
+            شيء الآن.
+          </p>
+          <div className="lp-plans">
+            {plans.map((p) => {
+              // The middle plan of three, by position rather than by key:
+              // "recommend the one in the middle" survives renaming or
+              // repricing the tiers, while `key === "basic"` silently
+              // highlights nothing the day that key changes.
+              const featured = plans.length === 3 && p.sortOrder === plans[1].sortOrder;
+              const free = p.priceHalalas === 0;
+              return (
+                <div key={p.key} className={`lp-plan${featured ? " is-featured" : ""}`}>
+                  {featured && <span className="tag">الأكثر طلبًا</span>}
+                  <h3>{p.name}</h3>
+                  <div className="price">
+                    <span className="n">{free ? "مجانًا" : SAR.format(p.priceHalalas / 100)}</span>
+                    {!free && (
+                      <span className="per">
+                        ريال / {p.interval === "yearly" ? "سنويًا" : "شهريًا"}
+                      </span>
+                    )}
+                  </div>
+                  <ul>
+                    <li>{limitText(p.maxAiRepliesMonthly, "رد ذكي شهريًا")}</li>
+                    <li>{limitText(p.maxStores, "متجر")}</li>
+                    <li>{limitText(p.maxUsers, "مستخدم")}</li>
+                    {p.features.map((f) => (
+                      <li key={f}>{f}</li>
+                    ))}
+                  </ul>
+                  <button
+                    type="button"
+                    className={`lp-btn ${featured ? "lp-btn-accent" : "lp-btn-ghost"}`}
+                    onClick={() => setRequested(p)}
+                  >
+                    اطلب باقة {p.name}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      <PlanRequestDialog plan={requested} onClose={() => setRequested(null)} />
+
       <div className="lp-stats">
         {STATS.map((s) => (
           <div key={s.l} className="lp-stat">
@@ -119,7 +211,7 @@ export function LandingPage() {
         <div className="lp-final">
           <h2>جاهز تنقل خدمة عملاء متجرك إلى مستوى آخر؟</h2>
           <p>انضم اليوم، ودع الذكاء الاصطناعي يتكفّل بردود عملائك بينما تركّز أنت على نموّ متجرك.</p>
-          <a href={contactHref} target="_blank" rel="noopener noreferrer" className="lp-btn lp-btn-gold lp-btn-lg">
+          <a href={contactHref} target="_blank" rel="noopener noreferrer" className="lp-btn lp-btn-accent lp-btn-lg">
             اطلب متجرك الآن
           </a>
         </div>
@@ -127,10 +219,14 @@ export function LandingPage() {
 
       <footer className="lp-foot">
         <div className="lp-brand">
-          <div className="mark">A</div>
-          <div className="name">Atlas</div>
+          <LogoLockup size={32} tone="light" />
         </div>
-        <div>© {new Date().getFullYear()} Atlas — جميع الحقوق محفوظة</div>
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
+          <Link to="/privacy">سياسة الخصوصية</Link>
+          <Link to="/terms">شروط الاستخدام</Link>
+          <span dir="ltr">maysoor.com</span>
+          <span>© {new Date().getFullYear()} ميسور — جميع الحقوق محفوظة</span>
+        </div>
       </footer>
     </div>
   );

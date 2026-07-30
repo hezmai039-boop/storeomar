@@ -1,60 +1,86 @@
+/* ميسور — the public auth screens (login, signup, forgot/reset password,
+   verify email). One stylesheet for all five so the door to the product is
+   the same door every time.
+
+   The world is the brand navy, the same one the landing page and the dark
+   dashboard live in. Two contrast constraints shape the numbers below:
+
+   1. <LogoLockup tone="light"> sets its descriptor line in brand orange
+      (#FF6A00) at roughly 9px. Orange is only legible as small text down to
+      a background of #0D2C4D (4.93:1), so .login-card is a NAVY glass —
+      rgba(7,24,42,.72) — which darkens whatever it sits on instead of the
+      white-tinted glass that would lighten it. Even over the brightest blob
+      peak the card composites to #0B263F, where that line is 5.37:1.
+   2. Nothing here is white-on-orange. The submit button is .btn-primary
+      from tokens.css (blue), because #FF6A00 cannot carry white text. */
+
 .login-page {
   min-height: 100vh;
   display: flex; align-items: center; justify-content: center;
   position: relative; overflow: hidden;
-  background: radial-gradient(ellipse 120% 100% at 50% 0%, #2a1454 0%, #150a2b 55%, #0c0619 100%);
+  background: radial-gradient(ellipse 120% 100% at 50% 0%, #123f66 0%, #0b2340 52%, #061423 100%);
 }
 .login-blob {
   position: absolute; border-radius: 50%;
-  filter: blur(50px); opacity: .55; pointer-events: none;
-  animation: atlas-float 16s ease-in-out infinite;
+  filter: blur(50px); pointer-events: none;
+  animation: ms-float 16s ease-in-out infinite;
 }
-.login-blob.b1 { width: 420px; height: 420px; background: #7c3aed; top: -10%; inset-inline-start: -8%; }
-.login-blob.b2 { width: 340px; height: 340px; background: #c084fc; bottom: -12%; inset-inline-end: -6%; animation-delay: -6s; }
-.login-blob.b3 { width: 260px; height: 260px; background: #4f2ba8; top: 40%; inset-inline-end: 18%; animation-delay: -3s; opacity: .35; }
+.login-blob.b1 { width: 420px; height: 420px; background: #1e5a8a; opacity: .4; top: -10%; inset-inline-start: -8%; }
+.login-blob.b2 { width: 340px; height: 340px; background: #2f6ea3; opacity: .32; bottom: -12%; inset-inline-end: -6%; animation-delay: -6s; }
+/* The one blob that drifts behind the card — kept navy and faint so it does
+   not lift the card's backdrop out of the range the logo's orange needs. */
+.login-blob.b3 { width: 260px; height: 260px; background: #0d2c4d; opacity: .5; top: 40%; inset-inline-end: 18%; animation-delay: -3s; }
 
 .login-card {
   position: relative; z-index: 1;
   width: 380px; padding: 40px 36px;
   display: flex; flex-direction: column; gap: 18px;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(7, 24, 42, 0.72);
   -webkit-backdrop-filter: blur(22px);
   backdrop-filter: blur(22px);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(230, 236, 242, 0.16);
   border-radius: var(--radius-lg);
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   color: #fff;
 }
-.login-mark {
-  width: 44px; height: 44px; border-radius: var(--radius-md);
-  background: var(--primary-gradient);
-  display: flex; align-items: center; justify-content: center;
-  font-family: var(--font-mono); font-weight: 800; font-size: 18px; color: #fff;
-  box-shadow: 0 8px 24px var(--primary-glow);
-  margin-bottom: 4px;
-}
-.login-title { font-weight: 800; font-size: 22px; }
-.login-sub { color: rgba(255, 255, 255, 0.65); font-size: 13px; margin-top: 2px; }
+/* The lockup carries the mark, the name and the descriptor, so the card no
+   longer draws a letter tile of its own. */
+.login-brand { margin-bottom: 4px; }
 
-.login-field { display: flex; flex-direction: column; gap: 7px; font-size: 13px; color: rgba(255, 255, 255, 0.85); }
+.login-title { font-weight: 800; font-size: 22px; }
+.login-sub { color: #b9cee0; font-size: 13px; margin-top: 2px; }
+
+.login-field { display: flex; flex-direction: column; gap: 7px; font-size: 13px; color: #b9cee0; }
 .login-field input {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(230, 236, 242, 0.22);
   color: #fff;
   padding: 11px 13px;
   border-radius: var(--radius-md);
 }
-.login-field input::placeholder { color: rgba(255, 255, 255, 0.35); }
+.login-field input::placeholder { color: #93aec6; }
 .login-field input:focus {
-  border-color: var(--primary-soft);
-  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.35);
+  border-color: var(--brand-orange, #ff6a00);
+  box-shadow: 0 0 0 3px rgba(255, 106, 0, 0.3);
 }
 
 .login-error {
-  color: #ffb4ae; font-size: 13px; background: rgba(220, 38, 38, 0.18);
-  border: 1px solid rgba(220, 38, 38, 0.35); border-radius: var(--radius-sm); padding: 8px 12px;
+  color: #ffb4a8; font-size: 13px; background: rgba(198, 40, 40, 0.22);
+  border: 1px solid rgba(242, 134, 127, 0.42); border-radius: var(--radius-sm); padding: 8px 12px;
 }
+
+/* A quiet informational panel (reset sent, verification done). Navy rather
+   than the dashboard's light --surface-2, which was invisible-on-invisible
+   here. */
+.login-note {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(230, 236, 242, 0.16);
+  border-radius: var(--radius-md);
+  padding: 14px; font-size: 14px; line-height: 1.7; color: #eaf1f8;
+}
+.login-note .muted { margin-top: 8px; font-size: 13px; color: #b9cee0; }
 
 .login-submit { justify-content: center; width: 100%; padding: 12px; font-size: 14px; }
 
-.login-footer { text-align: center; font-size: 11.5px; color: rgba(255, 255, 255, 0.35); margin-top: 4px; }
+.login-footer { text-align: center; font-size: 12px; color: #a7bdd1; margin-top: 4px; }
+.login-footer a { color: #8fc0e6; }

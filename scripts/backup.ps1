@@ -1,4 +1,4 @@
-# نسخة احتياطية من قاعدة بيانات أطلس — إصدار PowerShell (ويندوز).
+# نسخة احتياطية من قاعدة بيانات ميسور — إصدار PowerShell (ويندوز).
 #
 # مكافئ scripts/backup.sh. موجود لأن سكربتات .sh لا تعمل في PowerShell
 # أصلًا، ومطالبة مستخدم ويندوز بتثبيت Git Bash لأخذ نسخة احتياطية عائق
@@ -49,7 +49,9 @@ if (-not (Test-Path $BackupDir)) {
 }
 
 $stamp = Get-Date -Format "yyyy-MM-dd_HHmmss"
-$out = Join-Path $BackupDir "atlas-$stamp.dump"
+# نفس بادئة backup.sh — النسخ الجديدة باسم maysoor-*.dump. الملفات القديمة
+# باسم atlas-*.dump تبقى صالحة، و restore-to-staging.sh يقبلها بلا تعديل.
+$out = Join-Path $BackupDir "maysoor-$stamp.dump"
 
 Write-Host "جارٍ أخذ النسخة الاحتياطية…"
 

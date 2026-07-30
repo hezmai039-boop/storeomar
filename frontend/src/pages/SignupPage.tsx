@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { api, ApiClientError, setAuthToken } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { usePublicConfig } from "../lib/publicConfig";
+import { LogoLockup } from "../components/Logo";
 import "./LoginPage.css";
 
 interface SignupResponse {
@@ -15,7 +16,7 @@ interface SignupResponse {
 }
 
 /**
- * Public self-serve signup — the endpoint that turns Atlas from something we
+ * Public self-serve signup — the endpoint that turns ميسور from something we
  * provision by hand into a platform anyone can join.
  *
  * The backend does all of it in one transaction (organization, store, owner
@@ -90,8 +91,10 @@ export function SignupPage() {
         <span className="login-blob b1" />
         <span className="login-blob b2" />
 
-        <div className="login-card atlas-enter">
-          <div className="login-mark">A</div>
+        <div className="login-card ms-enter">
+          <div className="login-brand">
+            <LogoLockup size={38} tone="light" />
+          </div>
           <div>
             <div className="login-title">التسجيل مغلق حاليًا</div>
             <div className="login-sub">
@@ -112,8 +115,10 @@ export function SignupPage() {
       <span className="login-blob b2" />
       <span className="login-blob b3" />
 
-      <form onSubmit={onSubmit} className="login-card atlas-enter">
-        <div className="login-mark">A</div>
+      <form onSubmit={onSubmit} className="login-card ms-enter">
+        <div className="login-brand">
+          <LogoLockup size={38} tone="light" />
+        </div>
         <div>
           <div className="login-title">إنشاء حساب جديد</div>
           <div className="login-sub">ابدأ مجانًا — بلا بطاقة ائتمانية</div>

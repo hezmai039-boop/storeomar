@@ -23,6 +23,14 @@ import { getRedis, getRedisSubscriber } from "./redis";
 //     password change — against the 8 hours a stateless JWT was valid for
 //     before any of this existed.
 
+// Kept as "atlas:" through the Maysoor rebrand ON PURPOSE — a wire
+// identifier, not a brand string. Publisher and subscriber must agree on the
+// name, and during a rolling deploy old and new instances run side by side;
+// renaming splits them onto two channels and the invalidations never arrive.
+// Here that is a security bug, not just a stale read: a revoked session or a
+// changed password would keep working on any instance that missed the drop,
+// for as long as the TTL. Changing it safely means a two-release migration
+// that publishes to both names first.
 const CHANNEL = "atlas:cache:invalidate";
 const ORIGIN = `${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
 

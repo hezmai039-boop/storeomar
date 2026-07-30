@@ -15,7 +15,7 @@ import { CheckoutInstruction, PaymentProvider } from "./types";
 
 const DEFAULTS = {
   bankName: "البنك الأهلي السعودي",
-  accountName: "منصة أطلس",
+  accountName: "منصة ميسور",
   iban: "SA0000000000000000000000",
 };
 

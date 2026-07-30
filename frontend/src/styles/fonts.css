@@ -1,0 +1,80 @@
+/* ميسور — brand typefaces.
+ *
+ * Self-hosted, NOT loaded from fonts.googleapis.com. Three reasons:
+ *   1. The app is an installable PWA with an offline fallback page. A font
+ *      fetched from a third-party origin is unavailable exactly when offline
+ *      matters, and the shell renders in a system fallback that looks broken.
+ *   2. Two extra DNS + TLS handshakes on first paint, on a product whose
+ *      customers are on Saudi mobile networks.
+ *   3. No third party gets a request-log entry for every visitor.
+ *
+ * Only the subsets that are actually used are shipped:
+ *   Tajawal — Arabic subset only. The whole interface is Arabic, and the
+ *             Latin glyphs in this family would only ever compete with Inter.
+ *             ~9KB per weight.
+ *   Inter   — Latin subset only, as a VARIABLE font. Google serves one file
+ *             for every weight of Inter v20 (verified: the 400/600/700 URLs
+ *             returned byte-identical files, and it carries an fvar table
+ *             with a 100–900 wght axis), so declaring the range here ships
+ *             one 48KB file instead of three copies of the same one.
+ *
+ * font-display: swap on every face. Arabic text rendered in an invisible
+ * font for 3 seconds is a blank page; a brief system-font flash is not.
+ */
+
+@font-face {
+  font-family: "Tajawal";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/tajawal-400-arabic.woff2") format("woff2");
+  /* Arabic + Arabic Supplement/Extended + presentation forms. Scoping the
+     range means the browser never downloads these files for a page that
+     turns out to be pure Latin. */
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0898-08E1,
+    U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FEFF;
+}
+
+@font-face {
+  font-family: "Tajawal";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/tajawal-500-arabic.woff2") format("woff2");
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0898-08E1,
+    U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FEFF;
+}
+
+@font-face {
+  font-family: "Tajawal";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/tajawal-700-arabic.woff2") format("woff2");
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0898-08E1,
+    U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FEFF;
+}
+
+@font-face {
+  font-family: "Tajawal";
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("/fonts/tajawal-800-arabic.woff2") format("woff2");
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0898-08E1,
+    U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FEFF;
+}
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  /* The range, not a single value — this is one variable file covering the
+     whole axis. A fixed `400` here would make the browser synthesise bold by
+     smearing the glyphs instead of using the real 700 master. */
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/inter-var-latin.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}

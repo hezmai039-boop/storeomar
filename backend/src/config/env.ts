@@ -49,7 +49,7 @@ export const env = {
   resendApiKey: process.env.RESEND_API_KEY,
   // Must be a domain verified with the provider, otherwise every send is
   // rejected. The default is only meaningful for the console adapter.
-  emailFrom: process.env.EMAIL_FROM ?? "Atlas <onboarding@atlas.sa>",
+  emailFrom: process.env.EMAIL_FROM ?? "ميسور <onboarding@maysoor.com>",
   // Base URL of the FRONTEND, used to build the links inside those emails.
   // Separate from corsOrigin even though they usually match: CORS is a
   // browser policy that may legitimately list several origins later, while
@@ -89,4 +89,15 @@ export const env = {
   // Flip SIGNUP_ENABLED=true when there is a reason to accept strangers —
   // it is an env var, so opening or closing it is a restart, not a deploy.
   signupEnabled: process.env.SIGNUP_ENABLED === "true",
+
+  // Where "a visitor asked for a plan on the landing page" is mailed. With
+  // signup closed, that form is the only way a stranger reaches the
+  // platform, so a lead nobody sees is a lost customer.
+  //
+  // Optional, and its absence is not an error: the in-app queue on
+  // /billing (platform staff only) is the PRIMARY channel and always works.
+  // Mail is the nudge on top, and it needs a real EMAIL_PROVIDER anyway —
+  // the default `console` provider only prints to the server log, so
+  // setting this alone changes nothing.
+  platformNotifyEmail: process.env.PLATFORM_NOTIFY_EMAIL,
 };

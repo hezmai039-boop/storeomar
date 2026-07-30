@@ -9,8 +9,19 @@ interface ChatMessage {
   createdAt: string;
 }
 
+/**
+ * Which browser this is, per simulation link — the backend threads replies
+ * onto the matching conversation.
+ *
+ * Renamed with the rebrand and NOT migrated, unlike the auth token in
+ * api/client.ts. A session here is a store owner testing their own agent
+ * ("هذه بيئة اختبار داخلية لصاحب المتجر"), not a real customer's support
+ * thread: the one-time cost is that a tester's previous trial chat starts
+ * over on this device. The transcript itself is not lost — it is already in
+ * the Inbox, where the owner actually reviews it.
+ */
 function visitorKey(token: string) {
-  return `atlas_sim_visitor_${token}`;
+  return `maysoor_sim_visitor_${token}`;
 }
 
 function timeLabel(iso: string) {
@@ -138,7 +149,7 @@ export function SimulatePage() {
         </div>
       </header>
 
-      <div className="sim-banner">هذه بيئة اختبار داخلية لصاحب المتجر — الردود من الذكاء الاصطناعي الحقيقي لأطلس.</div>
+      <div className="sim-banner">هذه بيئة اختبار داخلية لصاحب المتجر — الردود من الذكاء الاصطناعي الحقيقي لميسور.</div>
 
       <div className="sim-messages" ref={scrollRef}>
         {messages.length === 0 && (

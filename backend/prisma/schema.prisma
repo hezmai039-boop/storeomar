@@ -53,6 +53,7 @@ model Organization {
   subscription  Subscription?
   usageCounters UsageCounter[]
   invoices      Invoice[]
+  planRequests  PlanRequest[]
 
   @@map("organizations")
 }
@@ -148,6 +149,7 @@ model User {
   auditLogs              AuditLog[]
   createdSimulationLinks SimulationLink[]
   reviewedInvoices       Invoice[]              @relation("InvoiceReviewer")
+  handledPlanRequests    PlanRequest[]          @relation("PlanRequestHandler")
   authTokens             AuthToken[]
 
   @@map("users")
@@ -798,6 +800,7 @@ model Plan {
 
   subscriptions Subscription[]
   invoices      Invoice[]
+  planRequests  PlanRequest[]
 
   @@map("plans")
 }
@@ -852,7 +855,7 @@ model Invoice {
   id             String   @id @default(uuid()) @db.Uuid
   organizationId String   @map("organization_id") @db.Uuid
   planId         String   @map("plan_id") @db.Uuid
-  number         String   @unique // ATL-2026-0001
+  number         String   @unique // MYS-2026-0001 (pre-rebrand rows: ATL-2026-0001)
   status         String   @default("pending") // pending | awaiting_review | paid | rejected | void
   provider       String   @default("manual")
   subtotalHalalas Int     @map("subtotal_halalas")
@@ -881,6 +884,66 @@ model Invoice {
   @@index([organizationId, createdAt])
   @@index([status, createdAt])
   @@map("invoices")
+}
+
+/// A visitor on the public landing page asking for a plan.
+///
+/// This is a LEAD, not a customer: there is no organization, no user, and no
+/// session behind it. Self-serve signup is closed (SIGNUP_ENABLED unset), so
+/// this table is the intake channel that replaces it — someone picks a plan,
+/// leaves contact details, the platform owner arranges payment out of band
+/// (bank transfer, WhatsApp), and then activates the plan against a real
+/// organization from inside the dashboard.
+///
+/// organizationId is nullable and stays null until that activation, which is
+/// the whole point: a row here grants nothing. Entitlement still comes only
+/// from Subscription, so a forged or spammed request costs the platform an
+/// inbox line, never a quota.
+///
+/// No store_id, like the four billing tables above — so it is deliberately
+/// absent from prisma/rls.sql. Its isolation is the API layer: every read is
+/// behind requirePlatformAdmin(), and the public POST can only insert.
+model PlanRequest {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// Nullable + a denormalised key on purpose. The request records what the
+  /// visitor asked for at the moment they asked; deactivating or renaming a
+  /// plan later must not rewrite history or orphan the row.
+  planId  String? @map("plan_id") @db.Uuid
+  planKey String  @map("plan_key")
+
+  name      String
+  email     String
+  phone     String
+  storeName String? @map("store_name")
+  note      String?
+
+  /// new | contacted | activated | rejected
+  status String @default("new")
+  /// Where the lead came from. Only "landing" today; a partner or campaign
+  /// page later needs a column, not a new table.
+  source String @default("landing")
+  /// Kept for abuse forensics only — never shown to anyone but platform
+  /// staff, and never used to identify a person.
+  ip String?
+
+  /// Set when the owner activates a plan for this lead. Until then the lead
+  /// is attached to nothing.
+  organizationId String?   @map("organization_id") @db.Uuid
+  handledBy      String?   @map("handled_by") @db.Uuid
+  handledAt      DateTime? @map("handled_at") @db.Timestamptz(6)
+  handleNote     String?   @map("handle_note")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  plan         Plan?         @relation(fields: [planId], references: [id])
+  organization Organization? @relation(fields: [organizationId], references: [id])
+  handler      User?         @relation("PlanRequestHandler", fields: [handledBy], references: [id])
+
+  @@index([status, createdAt])
+  @@index([email])
+  @@map("plan_requests")
 }
 
 // ------------------------------------------------------------------
@@ -926,7 +989,7 @@ model OAuthState {
   // Random, single-use. Sent to the platform as ?state= and required to
   // match on the callback: without it, an attacker can hand a victim a
   // crafted callback URL that binds the ATTACKER's Salla/Zid store to the
-  // victim's Atlas account (CSRF on the connect flow).
+  // victim's Maysoor account (CSRF on the connect flow).
   state     String   @unique
   storeId   String   @map("store_id") @db.Uuid
   platform  String // salla | zid

@@ -28,7 +28,39 @@ import { execFileSync } from "node:child_process";
 
 const BASELINE = "0_init";
 
+/**
+ * Checked BEFORE PrismaClient is constructed — the client validates both
+ * connection strings at instantiation, so anything later never runs.
+ *
+ * Prisma's own P1013 ("The scheme is not recognized in database URL") names
+ * neither the offending variable nor its contents, and the schema reads two
+ * of them. The realistic mistake is pasting from a provider dashboard with a
+ * format still selected: Neon's ".env" option yields
+ * `DATABASE_URL=postgresql://…` and its "psql" option yields
+ * `psql 'postgresql://…'` — both a faithful copy of the wrong thing. Naming
+ * the variable and showing its opening characters turns a long hunt into an
+ * obvious fix.
+ */
+function assertConnectionStrings(): void {
+  for (const name of ["DATABASE_URL", "DIRECT_DATABASE_URL"] as const) {
+    // DIRECT_DATABASE_URL legitimately falls back to DATABASE_URL where
+    // there is no pooler, so only complain when it is set to something.
+    const value = process.env[name];
+    if (name === "DIRECT_DATABASE_URL" && !value) continue;
+    if (!value) throw new Error(`${name} is not set.`);
+    if (!/^postgres(ql)?:\/\//.test(value)) {
+      const shown = value.slice(0, 28).replace(/:[^:@/]*@/, ":***@");
+      throw new Error(
+        `${name} must start with postgresql:// or postgres://, but starts with "${shown}…".\n` +
+          `It looks like the value carries something before the scheme — a "VARNAME=" prefix, ` +
+          `a "psql " prefix, or surrounding quotes. Paste only the connection string itself.`
+      );
+    }
+  }
+}
+
 async function main() {
+  assertConnectionStrings();
   const prisma = new PrismaClient();
   try {
     const [{ has_history, has_tables }] = await prisma.$queryRaw<
@@ -58,6 +90,25 @@ async function main() {
     // and downloads it — this script hit exactly that, silently running
     // Prisma 7 against a project pinned to 5.22 and failing on a flag that
     // major had removed.
+    // Validated here rather than letting Prisma report it, because Prisma's
+    // P1013 ("The scheme is not recognized in database URL") does not say
+    // WHICH variable is wrong or what it actually contains — and the schema
+    // reads two of them. The realistic mistake is pasting from a provider's
+    // dashboard with a format still selected: Neon's ".env" option yields
+    // `DATABASE_URL=postgresql://...` and its "psql" option yields
+    // `psql 'postgresql://...'`, both of which are a valid copy of the wrong
+    // thing. Naming the variable and showing its first characters turns a
+    // ten-minute hunt into an obvious fix.
+    const directUrl = process.env.DIRECT_DATABASE_URL || process.env.DATABASE_URL || "";
+    if (!/^postgres(ql)?:\/\//.test(directUrl)) {
+      const shown = directUrl.slice(0, 24).replace(/:[^:@/]*@/, ":***@");
+      throw new Error(
+        `DIRECT_DATABASE_URL must start with postgresql:// or postgres://, but starts with "${shown}…".\n` +
+          `The value looks like it carries something before the scheme — a "VARNAME=" prefix, a "psql " prefix, ` +
+          `or surrounding quotes. Paste only the connection string itself.`
+      );
+    }
+
     const cli = require.resolve("prisma/build/index.js", { paths: [process.cwd()] });
     execFileSync(process.execPath, [cli, "migrate", "resolve", "--applied", BASELINE], {
       stdio: "inherit",

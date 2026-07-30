@@ -92,3 +92,26 @@ using (
 --     depending on the context would be circular and deny everyone.
 --     Scoped explicitly by userId + store.organizationId at the query.
 -- ------------------------------------------------------------------
+
+-- ------------------------------------------------------------------
+-- Tables with NO store_id, and therefore no store_isolation policy.
+--
+-- The loop above only visits tables that HAVE a store_id column, so these
+-- are skipped automatically — this note exists so that absence reads as a
+-- decision rather than an oversight during the next audit.
+--
+--   plans, subscriptions, usage_counters, invoices
+--     Organization-scoped billing (docs/25-billing-and-plans.md §1). There
+--     is no store_id for a policy to match on. Isolation is the API layer:
+--     every billing route derives the organization id from the signed JWT,
+--     never from a body, param, or query.
+--
+--   plan_requests
+--     A landing-page LEAD: no organization, no user, no session behind it,
+--     because none of those exist until the platform owner activates a plan
+--     for that person. It has nothing to be isolated against. The public
+--     endpoint can only INSERT; every read is behind requirePlatformAdmin().
+--     A row here grants nothing — entitlement still comes only from
+--     subscriptions — which is what makes an unauthenticated write to it
+--     acceptable at all.
+-- ------------------------------------------------------------------

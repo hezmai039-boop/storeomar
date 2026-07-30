@@ -19,6 +19,7 @@ import { aiIntelligenceRouter } from "./modules/ai-intelligence/routes";
 import { simulationRouter } from "./modules/simulation/routes";
 import { simulationPublicRouter } from "./modules/simulation/publicRoutes";
 import { billingRouter } from "./modules/billing/routes";
+import { billingPublicRouter } from "./modules/billing/publicRoutes";
 import { oauthConnectRouter, oauthCallbackRouter } from "./modules/integrations/oauth/routes";
 
 const app = express();
@@ -88,6 +89,14 @@ app.get("/health/ready", async (_req, res) => {
 // store owner's own session once that token expired.)
 app.use("/v1/public/simulate", simulationPublicRouter);
 
+// The landing page's plan catalogue and its "request this plan" form —
+// mounted here for exactly the reason above: the visitor has no session, and
+// the routers at the bare "/v1" prefix would 401 them before Express got
+// this far. GET /plans is a read of already-public pricing; POST
+// /plan-requests writes a lead that grants nothing until a human activates
+// it. See modules/billing/publicRoutes.ts.
+app.use("/v1/public", billingPublicRouter);
+
 // The Salla/Zid OAuth callback, mounted here for exactly the same reason as
 // the simulation route above: it is a genuinely public, tokenless route
 // (the platform redirects the merchant's BROWSER to it, with no
@@ -118,5 +127,5 @@ app.use(errorHandler);
 
 app.listen(env.port, () => {
   // eslint-disable-next-line no-console
-  console.log(`Atlas backend listening on :${env.port}`);
+  console.log(`Maysoor backend listening on :${env.port}`);
 });

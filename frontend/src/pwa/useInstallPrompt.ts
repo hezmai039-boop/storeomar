@@ -6,7 +6,10 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
 
-const DISMISS_KEY = "atlas_pwa_install_dismissed";
+// Renamed with the rebrand and NOT migrated: this is a UI preference, so the
+// worst case is that someone who had dismissed the old banner is offered the
+// install once more. A stale "no thanks" is not worth a migration block.
+const DISMISS_KEY = "maysoor_pwa_install_dismissed";
 
 /**
  * Surfaces a custom "install app" affordance when the browser offers one,

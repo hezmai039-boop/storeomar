@@ -1,3 +1,4 @@
+import { LogoMark } from "../components/Logo";
 import { useInstallPrompt } from "./useInstallPrompt";
 
 /**
@@ -12,7 +13,7 @@ export function InstallBanner() {
   return (
     <div
       role="dialog"
-      aria-label="تثبيت تطبيق Atlas"
+      aria-label="تثبيت تطبيق ميسور"
       style={{
         position: "fixed",
         insetInlineStart: 12,
@@ -25,33 +26,24 @@ export function InstallBanner() {
         padding: "12px 14px",
         borderRadius: 14,
         background: "var(--surface, #fff)",
-        border: "1px solid var(--border, #e5defa)",
-        boxShadow: "0 20px 56px rgba(45, 20, 90, 0.22)",
+        border: "1px solid var(--border, #dde5ee)",
+        boxShadow: "0 20px 56px rgba(13, 44, 77, 0.2)",
         maxWidth: 440,
         marginInline: "auto",
       }}
     >
-      <img src="/icon.svg" alt="" width={40} height={40} style={{ borderRadius: 10, flexShrink: 0 }} />
+      {/* The component, not /icon.svg: same geometry, but this one cannot
+          drift from the rest of the app or 404 while offline. */}
+      <LogoMark size={40} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13.5, fontWeight: 700, color: "var(--text, #1b1330)" }}>ثبّت تطبيق Atlas</div>
-        <div style={{ fontSize: 12, color: "var(--text-dim, #675e80)" }}>
+        <div style={{ fontSize: 13.5, fontWeight: 700, color: "var(--text, #0d2c4d)" }}>ثبّت تطبيق ميسور</div>
+        <div style={{ fontSize: 12, color: "var(--text-dim, #4a6480)" }}>
           أضِفه لشاشتك الرئيسية لفتحه كتطبيق مستقل واستقبال المحادثات أسرع.
         </div>
       </div>
-      <button
-        onClick={promptInstall}
-        style={{
-          background: "var(--primary, #7c3aed)",
-          color: "#fff",
-          border: "none",
-          borderRadius: 999,
-          padding: "8px 16px",
-          fontSize: 13,
-          fontWeight: 700,
-          cursor: "pointer",
-          flexShrink: 0,
-        }}
-      >
+      {/* btn-accent, not a hand-rolled orange: it puts NAVY on the orange
+          (4.93:1). White on #FF6A00 is 2.87:1 and fails AA outright. */}
+      <button className="btn btn-accent" onClick={promptInstall} style={{ flexShrink: 0 }}>
         تثبيت
       </button>
       <button
@@ -60,7 +52,7 @@ export function InstallBanner() {
         style={{
           background: "none",
           border: "none",
-          color: "var(--text-faint, #9891ac)",
+          color: "var(--text-faint, #8399ae)",
           fontSize: 18,
           cursor: "pointer",
           lineHeight: 1,

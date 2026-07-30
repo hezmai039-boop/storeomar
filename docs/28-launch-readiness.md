@@ -38,7 +38,7 @@
 ```bash
 STORAGE_PROVIDER=s3
 STORAGE_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
-STORAGE_BUCKET=atlas-knowledge
+STORAGE_BUCKET=maysoor-knowledge
 STORAGE_ACCESS_KEY=...
 STORAGE_SECRET_KEY=...
 STORAGE_REGION=auto
@@ -96,20 +96,23 @@ SENTRY_DSN=https://...@....ingest.sentry.io/...
 ### أخذ نسخة
 
 ```bash
-pg_dump "$DATABASE_URL" --format=custom --file=atlas-$(date +%F).dump
+pg_dump "$DATABASE_URL" --format=custom --file=maysoor-$(date +%F).dump
 ```
+
+> نسخك الأقدم باسم `atlas-*.dump` تبقى صالحة تمامًا — تغيّرت بادئة الاسم
+> فقط، لا الصيغة. `./scripts/restore-to-staging.sh` يقبل الاسمين.
 
 ### اختبار الاستعادة فعليًا
 
 ```bash
-createdb atlas_restore_test
-pg_restore --dbname=atlas_restore_test --no-owner atlas-2026-07-29.dump
+createdb maysoor_restore_test
+pg_restore --dbname=maysoor_restore_test --no-owner maysoor-2026-07-29.dump
 
-psql atlas_restore_test -c "SELECT count(*) FROM conversations;"
-psql atlas_restore_test -c "SELECT count(*) FROM knowledge_chunks;"
-psql atlas_restore_test -c "SELECT count(*) FROM invoices;"
+psql maysoor_restore_test -c "SELECT count(*) FROM conversations;"
+psql maysoor_restore_test -c "SELECT count(*) FROM knowledge_chunks;"
+psql maysoor_restore_test -c "SELECT count(*) FROM invoices;"
 
-dropdb atlas_restore_test
+dropdb maysoor_restore_test
 ```
 
 قارن الأعداد بالإنتاج. **افعل هذا مرة واحدة على الأقل قبل أول عميل يدفع**، وكرّره كل ربع سنة.

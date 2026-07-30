@@ -237,3 +237,62 @@ export interface SubscribeResult {
   invoice: Invoice | null;
   checkout: CheckoutInstruction | null;
 }
+
+// ---------------------------------------------------------------
+// Landing-page plan requests (leads).
+//
+// PublicPlan is a NARROWER shape than Plan, on purpose: it mirrors the
+// explicit `select` in the backend's GET /v1/public/plans. If a field is
+// missing here that Plan has, that is the point — an anonymous visitor is
+// not shown internal columns, and typing the public response as `Plan`
+// would let a component read `id` or `isActive` that the API never sends.
+// ---------------------------------------------------------------
+
+export interface PublicPlan {
+  key: string;
+  name: string;
+  nameEn: string;
+  priceHalalas: number;
+  currency: string;
+  interval: string;
+  maxStores: number | null;
+  maxUsers: number | null;
+  maxAiRepliesMonthly: number | null;
+  features: string[];
+  sortOrder: number;
+}
+
+export type PlanRequestStatus = "new" | "contacted" | "activated" | "rejected";
+
+export interface PlanRequest {
+  id: string;
+  planKey: string;
+  name: string;
+  email: string;
+  phone: string;
+  storeName: string | null;
+  note: string | null;
+  status: PlanRequestStatus;
+  source: string;
+  ip: string | null;
+  organizationId: string | null;
+  handledAt: string | null;
+  handleNote: string | null;
+  createdAt: string;
+  plan: { key: string; name: string; priceHalalas: number; currency: string; interval: string } | null;
+  organization: { id: string; name: string; slug: string } | null;
+}
+
+/** The picker behind "activate a plan for…" — platform staff only. */
+export interface AdminOrganization {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+  createdAt: string;
+  subscription: {
+    status: SubscriptionStatus;
+    currentPeriodEnd: string;
+    plan: { key: string; name: string };
+  } | null;
+}

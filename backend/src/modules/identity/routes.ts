@@ -268,7 +268,7 @@ export function deriveOrgSlug(organizationName: string): string {
 
 /**
  * Organization.slug is globally unique, so two customers both called
- * "Atlas Store" must not both get `atlas-store`. Appends -2, -3, … and
+ * "Maysoor Store" must not both get `maysoor-store`. Appends -2, -3, … and
  * gives up on the counter after a few tries in favour of a random suffix —
  * an unbounded loop here would let a single popular name turn every future
  * signup into a linear scan of the table.

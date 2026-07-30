@@ -13,8 +13,15 @@ import { env } from "../../config/env";
 
 type Rendered = { subject: string; html: string; text: string };
 
-const BRAND = "أطلس";
-const BRAND_COLOR = "#0f766e";
+const BRAND = "ميسور";
+// Maysoor navy. This value is used BOTH as text on white (the wordmark) and
+// as the CTA button's background under white text — 14.15:1 either way, so it
+// clears WCAG AA in both roles.
+//
+// Do NOT swap this for the brand orange (#FF6A00): orange with white text is
+// 2.87:1 and fails AA outright. Orange is only ever legible against navy text
+// (4.93:1), which is not the pairing the button below uses.
+const BRAND_COLOR = "#0D2C4D";
 
 /**
  * Links point at the FRONTEND (env.appUrl), not the API. The recipient is a
@@ -36,8 +43,8 @@ export function passwordResetLink(token: string): string {
  * straight from the public signup body with no character restriction. An
  * attacker can therefore sign up with a *victim's* email address and a name
  * of `<a href="https://evil.example">فعّل حسابك</a>`, and the platform will
- * mail that victim an attacker-authored link inside a genuine Atlas
- * template, from Atlas's own SPF/DKIM-valid domain. That is a far better
+ * mail that victim an attacker-authored link inside a genuine Maysoor
+ * template, from Maysoor's own SPF/DKIM-valid domain. That is a far better
  * phishing primitive than anything the attacker could send themselves.
  *
  * The `text` variants need no escaping — they are never parsed as markup.
@@ -72,7 +79,7 @@ function layout(params: { heading: string; paragraphs: string[]; buttonLabel: st
         <!-- dir="ltr" on the URL itself: an RTL container reorders a bare
              URL's slashes and query string on screen, and the customer
              copies a broken link. -->
-        <p dir="ltr" style="margin:0 0 24px;font-size:12px;color:#0f766e;word-break:break-all;text-align:left;">${escapeHtml(params.link)}</p>
+        <p dir="ltr" style="margin:0 0 24px;font-size:12px;color:${BRAND_COLOR};word-break:break-all;text-align:left;">${escapeHtml(params.link)}</p>
         <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0;" />
         <p style="margin:0;font-size:12px;color:#94a3b8;line-height:1.8;">${escapeHtml(params.footer)}</p>
       </td>
@@ -135,6 +142,99 @@ export function passwordResetEmail(params: { name: string; link: string }): Rend
       "",
       "الرابط صالح لمدة 60 دقيقة ويُستخدم مرة واحدة فقط.",
       "إذا لم تطلب إعادة التعيين، تجاهل هذه الرسالة — كلمة المرور الحالية ما زالت تعمل.",
+    ].join("\n"),
+  };
+}
+
+/** The dashboard page where the owner acts on a lead. */
+export function planRequestsLink(): string {
+  return `${env.appUrl.replace(/\/+$/, "")}/billing`;
+}
+
+/**
+ * Sent to the PLATFORM OWNER when a visitor asks for a plan on the landing
+ * page. Not a customer-facing message — it is the notification that replaces
+ * self-serve signup while SIGNUP_ENABLED is off.
+ *
+ * Every field here is attacker-controlled: the endpoint behind it is public
+ * and unauthenticated. They go through the same escapeHtml() as everything
+ * else, and the recipient is the one account that can activate plans, so the
+ * phishing consequence of getting that wrong is the worst on the platform.
+ * The `text` part carries the same values unescaped, which is correct — it
+ * is never parsed as markup.
+ */
+export function planRequestNotificationEmail(params: {
+  planName: string;
+  name: string;
+  email: string;
+  phone: string;
+  storeName?: string | null;
+  note?: string | null;
+  link: string;
+}): Rendered {
+  const paragraphs = [
+    `طلب جديد على باقة «${params.planName}» من صفحة الهبوط.`,
+    `الاسم: ${params.name}`,
+    `البريد: ${params.email}`,
+    `الجوال: ${params.phone}`,
+    ...(params.storeName ? [`المتجر: ${params.storeName}`] : []),
+    ...(params.note ? [`ملاحظة العميل: ${params.note}`] : []),
+    "تواصل معه للاتفاق على الدفع، ثم فعّل الباقة له من لوحة الفوترة.",
+  ];
+  return {
+    subject: `طلب باقة جديد — ${params.planName} (${params.name})`,
+    html: layout({
+      heading: "طلب باقة جديد",
+      paragraphs,
+      buttonLabel: "فتح لوحة الفوترة",
+      link: params.link,
+      footer: `هذه رسالة داخلية من منصة ${BRAND} إلى مالك المنصة، وليست رسالة للعميل.`,
+    }),
+    text: [
+      `طلب جديد على باقة «${params.planName}» من صفحة الهبوط.`,
+      "",
+      `الاسم: ${params.name}`,
+      `البريد: ${params.email}`,
+      `الجوال: ${params.phone}`,
+      ...(params.storeName ? [`المتجر: ${params.storeName}`] : []),
+      ...(params.note ? [`ملاحظة العميل: ${params.note}`] : []),
+      "",
+      "افتح لوحة الفوترة للتواصل والتفعيل:",
+      params.link,
+    ].join("\n"),
+  };
+}
+
+/**
+ * The acknowledgement the visitor gets. Deliberately contains NO link that
+ * grants anything and no account details — nothing exists yet. Its only job
+ * is to stop the person wondering whether the form worked.
+ *
+ * Sent to an address nobody verified, so it must stay useless to an attacker
+ * who submits the form with someone else's email: worst case that person
+ * receives one "we got your request" note, which is why it names no plan
+ * price, no reference number, and offers no action.
+ */
+export function planRequestAckEmail(params: { name: string; planName: string }): Rendered {
+  const paragraphs = [
+    `مرحبًا ${params.name}، وصلنا طلبك على باقة «${params.planName}».`,
+    "سيتواصل معك فريق المنصة قريبًا للاتفاق على طريقة الدفع وتفعيل حسابك.",
+  ];
+  return {
+    subject: `استلمنا طلبك — منصة ${BRAND}`,
+    html: layout({
+      heading: "استلمنا طلبك",
+      paragraphs,
+      buttonLabel: `زيارة ${BRAND}`,
+      link: env.appUrl.replace(/\/+$/, ""),
+      footer: `إذا لم تطلب هذا، تجاهل الرسالة — لم يُنشأ لك أي حساب ولم يُسجَّل عليك أي مبلغ.`,
+    }),
+    text: [
+      `مرحبًا ${params.name}،`,
+      "",
+      `وصلنا طلبك على باقة «${params.planName}». سيتواصل معك فريق المنصة قريبًا للاتفاق على الدفع والتفعيل.`,
+      "",
+      "إذا لم تطلب هذا، تجاهل الرسالة — لم يُنشأ لك أي حساب ولم يُسجَّل عليك أي مبلغ.",
     ].join("\n"),
   };
 }

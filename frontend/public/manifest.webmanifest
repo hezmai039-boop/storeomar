@@ -1,6 +1,6 @@
 {
-  "name": "Atlas — منصة المتاجر والذكاء الاصطناعي",
-  "short_name": "Atlas",
+  "name": "ميسور — خدمة العملاء الذكية",
+  "short_name": "ميسور",
   "description": "إدارة محادثات عملاء متجرك عبر واتساب وبقية القنوات مع مساعد ذكاء اصطناعي في تطبيق واحد.",
   "id": "/",
   "start_url": "/",
@@ -9,8 +9,8 @@
   "orientation": "portrait-primary",
   "dir": "rtl",
   "lang": "ar",
-  "background_color": "#120a24",
-  "theme_color": "#7c3aed",
+  "background_color": "#0D2C4D",
+  "theme_color": "#0D2C4D",
   "categories": ["business", "productivity"],
   "icons": [
     {

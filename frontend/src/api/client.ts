@@ -1,11 +1,43 @@
 const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
-let authToken: string | null = localStorage.getItem("atlas_token");
+const TOKEN_KEY = "maysoor_token";
+/** The pre-rebrand key. Only the migration block below and logout touch it. */
+const LEGACY_TOKEN_KEY = "atlas_token";
+
+// ── One-time rebrand migration — DELIBERATELY TEMPORARY ────────────────────
+// Renaming the storage key outright would sign out every session created
+// before the ميسور rebrand, including the owner's own, mid-work: the browser
+// would still be holding a perfectly valid JWT under a name nothing reads
+// anymore. So the first load after the rename carries the value across and
+// drops the old key.
+//
+// This block is safe to DELETE once no live session predates the rebrand.
+// Sessions are JWTs with a finite TTL, so that moment arrives on its own —
+// after the longest token lifetime has elapsed since deploy, nothing can
+// still be storing `atlas_token`. Delete LEGACY_TOKEN_KEY and its removal in
+// setAuthToken() at the same time.
+if (!localStorage.getItem(TOKEN_KEY)) {
+  const legacy = localStorage.getItem(LEGACY_TOKEN_KEY);
+  if (legacy) localStorage.setItem(TOKEN_KEY, legacy);
+}
+// Unconditional: whether it was just copied across, or was sitting stale
+// beside an already-current maysoor_token, the old key has no reason to
+// survive this load.
+localStorage.removeItem(LEGACY_TOKEN_KEY);
+
+let authToken: string | null = localStorage.getItem(TOKEN_KEY);
 
 export function setAuthToken(token: string | null) {
   authToken = token;
-  if (token) localStorage.setItem("atlas_token", token);
-  else localStorage.removeItem("atlas_token");
+  if (token) {
+    localStorage.setItem(TOKEN_KEY, token);
+  } else {
+    // BOTH keys, always. If logout left atlas_token behind, the migration
+    // above would find it on the next page load and silently sign the user
+    // back in — a "log out" that does not log you out.
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(LEGACY_TOKEN_KEY);
+  }
 }
 
 export function getAuthToken() {

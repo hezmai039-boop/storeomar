@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
+import { LogoLockup } from "../components/Logo";
 import "./LoginPage.css";
 
 /**
@@ -41,8 +42,10 @@ export function ForgotPasswordPage() {
       <span className="login-blob b2" />
       <span className="login-blob b3" />
 
-      <form onSubmit={onSubmit} className="login-card atlas-enter">
-        <div className="login-mark">A</div>
+      <form onSubmit={onSubmit} className="login-card ms-enter">
+        <div className="login-brand">
+          <LogoLockup size={38} tone="light" />
+        </div>
         <div>
           <div className="login-title">استعادة كلمة المرور</div>
           <div className="login-sub">سنرسل لك رابط إعادة تعيين</div>
@@ -50,20 +53,10 @@ export function ForgotPasswordPage() {
 
         {sent ? (
           <>
-            <div
-              style={{
-                background: "var(--surface-2, #f4f6f8)",
-                borderRadius: 8,
-                padding: 14,
-                fontSize: 14,
-                lineHeight: 1.7,
-              }}
-            >
+            <div className="login-note">
               إذا كان هناك حساب مرتبط بهذا البريد، فقد أُرسل إليه رابط لإعادة تعيين كلمة المرور. الرابط صالح لمدة ساعة
               واحدة.
-              <div style={{ marginTop: 8, opacity: 0.75, fontSize: 13 }}>
-                تحقق من مجلد البريد غير المرغوب فيه إن لم تجده.
-              </div>
+              <div className="muted">تحقق من مجلد البريد غير المرغوب فيه إن لم تجده.</div>
             </div>
             <Link className="btn btn-primary login-submit" to="/login" style={{ textAlign: "center" }}>
               العودة لتسجيل الدخول

@@ -8,22 +8,34 @@
 # انهار كل شيء فلا أحد يتأثر.
 #
 # الاستخدام:
-#   ./scripts/restore-to-staging.sh ./backups/atlas-2026-07-29.dump
+#   ./scripts/restore-to-staging.sh ./backups/maysoor-2026-07-29.dump
+#   ./scripts/restore-to-staging.sh ./backups/atlas-2026-07-12.dump   # نسخة قديمة
 #   ./scripts/restore-to-staging.sh <ملف> <اسم_قاعدة> <عنوان_الخادم>
 #
-# ⚠️ يحذف قاعدة الهدف إن كانت موجودة. اسمها الافتراضي atlas_staging —
+# ملاحظة عن الأسماء القديمة: كانت النسخ تُسمّى atlas-*.dump قبل إعادة التسمية
+# إلى ميسور. السكربت **لا يفحص بادئة اسم الملف إطلاقًا** — يكفي أن يكون
+# الملف موجودًا وبصيغة pg_dump المخصصة. أي نسخة قديمة تحتفظ بها تُستعاد
+# بلا إعادة تسمية ولا أي خطوة إضافية، وهذا مقصود: النسخة الاحتياطية التي
+# تحتاج طقسًا قبل استعادتها هي نسخة لن تُستعاد وقت الحاجة.
+#
+# ⚠️ يحذف قاعدة الهدف إن كانت موجودة. اسمها الافتراضي maysoor_staging —
 # لن يقبل السكربت اسمًا لا يحتوي "staging" أو "test" حمايةً من تمرير
 # قاعدة الإنتاج بالخطأ.
+#
+# إعادة تسمية قاعدة التجارب آمنة (بخلاف أدوار قاعدة البيانات atlas_app /
+# atlas_resolver التي تبقى بأسمائها) لأن هذه القاعدة تُحذف وتُنشأ من الصفر
+# في كل تشغيلة — لا شيء يعيش فيها بين مرة وأخرى.
 
 set -euo pipefail
 
 DUMP="${1:-}"
-TARGET_DB="${2:-atlas_staging}"
+TARGET_DB="${2:-maysoor_staging}"
 PG_HOST_URL="${3:-${PGSTAGING_URL:-postgresql://postgres@localhost:5432}}"
 
 if [[ -z "$DUMP" ]]; then
   echo "خطأ: حدّد ملف النسخة الاحتياطية." >&2
-  echo "استخدم:  ./scripts/restore-to-staging.sh ./backups/atlas-....dump" >&2
+  echo "استخدم:  ./scripts/restore-to-staging.sh ./backups/maysoor-....dump" >&2
+  echo "(النسخ القديمة باسم atlas-*.dump مقبولة كما هي.)" >&2
   exit 1
 fi
 

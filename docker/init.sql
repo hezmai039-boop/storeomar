@@ -8,9 +8,19 @@
 --
 -- Runs once, automatically, the first time the postgres container starts
 -- (docker-entrypoint-initdb.d convention). Sets up the three-role model
--- verified by hand while building this project — see
+-- verified by hand while building the Maysoor platform — see
 -- backend/src/config/env.ts and backend/prisma/rls.sql for why each role
--- exists:
+-- exists.
+--
+-- The `atlas*` role names below are NOT leftover branding and must survive
+-- the Maysoor rename: these roles already exist in the production database,
+-- and their names are baked into the connection strings the backend boots
+-- with (DATABASE_URL / APP_DATABASE_URL / RESOLVER_DATABASE_URL) as well as
+-- every GRANT and RLS policy attached to them. Renaming a role in this file
+-- does nothing to a database that was already initialised — this script only
+-- runs on an EMPTY data directory — so the only effect would be that a fresh
+-- environment no longer matches the deployed one. A real rename is ALTER ROLE
+-- plus a credentials rotation, run by hand.
 --
 --   atlas           — POSTGRES_USER, already a full superuser courtesy of
 --                     the base image. Used ONLY by the Prisma CLI

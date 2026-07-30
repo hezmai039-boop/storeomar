@@ -1,23 +1,40 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Atlas">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#a463f7"/>
-      <stop offset="0.45" stop-color="#7c3aed"/>
-      <stop offset="1" stop-color="#5622c9"/>
-    </linearGradient>
-    <linearGradient id="mark" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff"/>
-      <stop offset="1" stop-color="#ede4ff"/>
-    </linearGradient>
-  </defs>
-  <!-- Full-bleed rounded square so it renders well as a maskable icon. -->
-  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
-  <!-- Stylized "A" (Atlas) built from two struts + crossbar. -->
-  <path d="M256 104 L360 400 L306 400 L286 340 L226 340 L206 400 L152 400 Z
-           M241 296 L271 296 L256 250 Z"
-        fill="url(#mark)"/>
-  <!-- Orbit ring nods to the "atlas / platform" idea without external assets. -->
-  <ellipse cx="256" cy="256" rx="150" ry="60"
-           fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="10"
-           transform="rotate(-24 256 256)"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="ميسور">
+  <!--
+    ميسور — app icon.
+
+    Full-bleed navy tile so it survives Android's maskable crop (the safe zone
+    is the centre 80%, so nothing meaningful goes near the edge). The mark is
+    the brand's three elements: a speech bubble (customer service), a headset
+    arc over it (support), and the Arabic ‏م‏ inside the bubble.
+
+    Flat shapes, no gradients and no filters: this renders at 16px in a
+    browser tab and at 192px on a home screen, and gradients turn to mud at
+    the small end while filters are dropped entirely by some icon pipelines.
+  -->
+  <rect width="512" height="512" rx="112" fill="#0D2C4D"/>
+
+  <!-- Headset band: an arc over the bubble, open at the bottom. -->
+  <path d="M136 250 A120 120 0 0 1 376 250"
+        fill="none" stroke="#E6ECF2" stroke-width="26" stroke-linecap="round"/>
+  <!-- Ear cups. The right one is orange — the single accent, so the eye lands
+       on one place rather than being pulled to both sides. -->
+  <rect x="112" y="236" width="52" height="86" rx="26" fill="#FF6A00"/>
+  <rect x="348" y="236" width="52" height="86" rx="26" fill="#E6ECF2"/>
+
+  <!-- Speech bubble, tail at the bottom-left (RTL: the tail points back
+       toward the speaker on a right-to-left reading). -->
+  <path d="M186 196 H326 a34 34 0 0 1 34 34 v92 a34 34 0 0 1 -34 34 h-74
+           l-46 40 v-40 h-20 a34 34 0 0 1 -34 -34 v-92 a34 34 0 0 1 34 -34 z"
+        fill="#FFFFFF"/>
+
+  <!-- ‏م‏ — the loop (bowl) and its descender, drawn rather than set in type
+       so the icon carries no font dependency at any size.
+
+       The descender drops almost vertically before curving. An earlier
+       version ran it horizontally first, which at 32px read as a rotated
+       "9" rather than a م — the bowl-then-drop is what makes the letter
+       recognisable once the detail is gone. -->
+  <circle cx="252" cy="246" r="31" fill="none" stroke="#0D2C4D" stroke-width="21"/>
+  <path d="M283 246 h14 a22 22 0 0 1 22 22 v52 a26 26 0 0 1 -26 26 h-18"
+        fill="none" stroke="#0D2C4D" stroke-width="21" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

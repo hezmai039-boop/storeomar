@@ -1,7 +1,8 @@
-/* Deliberately NOT Atlas's violet token system — this page's whole job is
-   to feel like real WhatsApp to a tester, so it borrows WhatsApp's own
+/* Deliberately NOT ميسور's navy/orange token system — this page's whole job
+   is to feel like real WhatsApp to a tester, so it borrows WhatsApp's own
    established visual language (dark teal header, sage chat backdrop,
-   green outgoing bubbles) instead of the admin app's identity. */
+   green outgoing bubbles) instead of the admin app's identity. The greens
+   and teals below are WhatsApp's, not the brand's; leave them alone. */
 
 .sim-page {
   height: 100vh;

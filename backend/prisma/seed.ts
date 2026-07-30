@@ -8,7 +8,7 @@ import { seedReferenceData } from "./seed-reference";
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log("Seeding Atlas demo data...");
+  console.log("Seeding Maysoor demo data...");
 
   // Roles, permissions, channel types and plans now live in
   // prisma/seed-reference.ts, which the deploy entrypoint runs on every boot
@@ -22,6 +22,14 @@ async function main() {
   const planByKey = new Map((await prisma.plan.findMany()).map((p) => [p.key, p]));
 
   // --- Organization + owner ---
+  //
+  // `atlas-owner` is NOT branding and must stay as-is through the Maysoor
+  // rename. The production organization already carries this slug (this demo
+  // seed ran there once), and the upsert keys on it — changing the string
+  // would not rename anything, it would create a SECOND organization on the
+  // next deploy and split the owner's data across two tenants. Renaming it is
+  // a hand-run data migration (UPDATE organizations SET slug = ... plus every
+  // URL that embeds it), not a code change.
   const organization = await prisma.organization.upsert({
     where: { slug: "atlas-owner" },
     create: { name: "مؤسسة المتاجر الستة", slug: "atlas-owner", status: "active" },

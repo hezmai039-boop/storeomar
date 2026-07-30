@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, ApiClientError } from "../api/client";
+import { LogoLockup } from "../components/Logo";
 import "./LoginPage.css";
 
 /**
@@ -56,8 +57,10 @@ export function ResetPasswordPage() {
   if (!token) {
     return (
       <div dir="rtl" lang="ar" className="login-page">
-        <div className="login-card atlas-enter">
-          <div className="login-mark">A</div>
+        <div className="login-card ms-enter">
+          <div className="login-brand">
+            <LogoLockup size={38} tone="light" />
+          </div>
           <div className="login-title">رابط غير صالح</div>
           <div className="login-sub">هذا الرابط لا يحتوي على رمز إعادة تعيين.</div>
           <Link className="btn btn-primary login-submit" to="/forgot-password" style={{ textAlign: "center" }}>
@@ -74,25 +77,17 @@ export function ResetPasswordPage() {
       <span className="login-blob b2" />
       <span className="login-blob b3" />
 
-      <form onSubmit={onSubmit} className="login-card atlas-enter">
-        <div className="login-mark">A</div>
+      <form onSubmit={onSubmit} className="login-card ms-enter">
+        <div className="login-brand">
+          <LogoLockup size={38} tone="light" />
+        </div>
         <div>
           <div className="login-title">تعيين كلمة مرور جديدة</div>
           <div className="login-sub">اختر كلمة مرور قوية لا تستخدمها في مكان آخر</div>
         </div>
 
         {done ? (
-          <div
-            style={{
-              background: "var(--surface-2, #f4f6f8)",
-              borderRadius: 8,
-              padding: 14,
-              fontSize: 14,
-              lineHeight: 1.7,
-            }}
-          >
-            تم تعيين كلمة المرور بنجاح. سيتم تحويلك لتسجيل الدخول…
-          </div>
+          <div className="login-note">تم تعيين كلمة المرور بنجاح. سيتم تحويلك لتسجيل الدخول…</div>
         ) : (
           <>
             <label className="login-field">

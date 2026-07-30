@@ -200,7 +200,7 @@ async function processInboundMessages(
 // to WHATSAPP_WEBHOOK_VERIFY_TOKEN (see docs/21-meta-tech-provider-guide.md).
 // Onboarding each additional store after that needs zero Meta App changes —
 // just: share the store's WABA as an asset, call POST /{WABA-ID}/subscribed_apps
-// once, and add the channel account in Atlas with its phoneNumberId as
+// once, and add the channel account in Maysoor with its phoneNumberId as
 // externalAccountId.
 // ---------------------------------------------------------------------------
 

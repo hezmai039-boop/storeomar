@@ -80,7 +80,7 @@ export function OnboardingPage() {
   if (done) {
     return (
       <div style={{ maxWidth: 640 }}>
-        <div className="card atlas-enter" style={{ padding: 24, borderColor: "var(--good)", boxShadow: "0 8px 24px rgba(22,163,74,0.15)" }}>
+        <div className="card ms-enter" style={{ padding: 24, borderColor: "var(--good)", boxShadow: "0 8px 24px rgba(22,163,74,0.15)" }}>
           <h1 style={{ fontSize: 20, margin: "0 0 6px" }}>✅ تم إنشاء المتجر بنجاح</h1>
           <p style={{ margin: "0 0 18px", color: "var(--text-dim)", fontSize: 13.5 }}>
             المتجر ووكيل الذكاء الاصطناعي وحساب دخول صاحبه — كلها جاهزة الآن.
