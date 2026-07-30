@@ -11,14 +11,35 @@ import { PERMISSIONS } from "../../lib/permissions";
 import { writeAudit } from "../../lib/audit";
 import { buildPageMeta, decodeCursor } from "../../lib/pagination";
 import { extractText, validateMimeMatchesType } from "./fileExtraction";
-import { readStoredFile, saveUploadedFile } from "../../lib/fileStorage";
+import { readLegacyLocalFile } from "../../lib/fileStorage";
+import { captureError } from "../../lib/observability";
+import {
+  buildStorageKey,
+  contentTypeForFile,
+  getStorageProvider,
+  storageKeyPrefix,
+} from "../../lib/storage/registry";
 
 export const knowledgeRouter = Router({ mergeParams: true });
 knowledgeRouter.use(authenticate, requireStoreAccess());
 
 // 10MB cap, memory storage — files are small policy/FAQ/catalog documents,
-// not media; we extract text immediately and only then write to disk.
+// not media; we extract text immediately and only then hand the bytes to the
+// storage provider (lib/storage), never to the container's own disk.
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+/**
+ * 404 for "there is a source, but its bytes are not retrievable".
+ *
+ * Deliberately distinct from ApiError.notFound("الملف") ("غير موجود"): the
+ * source row exists and its text still answers customers, so the honest
+ * message is "the file is not available" rather than "not found". The separate
+ * code lets a client tell "this source never had a file" apart from "this
+ * source's file was lost with the ephemeral disk" without parsing Arabic prose.
+ */
+function fileUnavailable(): ApiError {
+  return new ApiError(404, "FILE_UNAVAILABLE", "الملف غير متوفر");
+}
 
 // Splits on blank-line paragraph breaks, and on sentence-ending
 // punctuation *within* a line — but deliberately NOT across a single line
@@ -107,18 +128,61 @@ knowledgeRouter.post(
       validateMimeMatchesType(body.type, file.mimetype);
     }
 
-    const created = await withStoreContext(req.storeAccess!.accessibleStoreIds, async (tx) => {
-      let extractedText = body.rawText;
-      let fileUrl: string | undefined;
+    // Everything that is not a database statement happens BEFORE the
+    // transaction opens: text extraction (CPU-bound — a 40-page PDF is not
+    // instant) and the storage PUT (a network round trip to R2/S3). Either one
+    // inside withStoreContext would hold a pool connection open for its whole
+    // duration, so a handful of simultaneous uploads could starve every other
+    // request in the process of a connection — a slow bucket would present as
+    // a site-wide outage.
+    let extractedText = body.rawText;
+    let fileUrl: string | null = null;
 
-      if (file) {
-        extractedText = await extractText(file.buffer, body.type);
-        if (!extractedText.trim()) {
-          throw ApiError.badRequest("لم يُستخرَج أي نص قابل للقراءة من هذا الملف");
-        }
-        fileUrl = saveUploadedFile(req.storeAccess!.storeId, file.originalname, file.buffer);
+    if (file) {
+      extractedText = await extractText(file.buffer, body.type);
+      if (!extractedText.trim()) {
+        throw ApiError.badRequest("لم يُستخرَج أي نص قابل للقراءة من هذا الملف");
       }
 
+      // Resolved outside the try on purpose. getStorageProvider() throws only
+      // for a misconfigured STORAGE_PROVIDER, and that must stay loud: swallow
+      // it here and a typo'd env var would send every production upload
+      // straight into the "storage failed, carry on" branch — silent data loss,
+      // which is the exact failure lib/storage exists to prevent.
+      const provider = getStorageProvider();
+      const key = buildStorageKey(req.storeAccess!.storeId, file.originalname);
+
+      try {
+        await provider.put({
+          key,
+          body: file.buffer,
+          contentType: contentTypeForFile(file.originalname, file.mimetype),
+        });
+        // The KEY is persisted, not the url the provider returns: the url
+        // embeds today's endpoint and bucket, while the key is what get() and
+        // delete() take and survives a provider migration (storage/types.ts).
+        fileUrl = key;
+      } catch (err) {
+        // Ordering rationale — extract first, store second, and a failed store
+        // does NOT fail the request. The extracted text and its chunks are the
+        // product: they are what search and the AI agent answer from. The
+        // original file is a convenience for a human who wants to re-read or
+        // re-process it. Rejecting the upload because the bucket was
+        // unreachable for two seconds would throw away the knowledge the
+        // customer just gave us in order to protect the less valuable half of
+        // it — and they would have to re-upload, with the same odds of failing
+        // again. So: report it, leave fileUrl null, create the source anyway.
+        // The download route then answers "الملف غير متوفر" for this row.
+        captureError(err, {
+          scope: "knowledge.upload.storage",
+          storeId: req.storeAccess!.storeId,
+          storageKey: key,
+          provider: provider.key,
+        });
+      }
+    }
+
+    const created = await withStoreContext(req.storeAccess!.accessibleStoreIds, async (tx) => {
       const source = await tx.knowledgeSource.create({
         data: {
           storeId: req.storeAccess!.storeId,
@@ -160,8 +224,31 @@ knowledgeRouter.get(
     const source = await withStoreContext(req.storeAccess!.accessibleStoreIds, (tx) =>
       tx.knowledgeSource.findFirst({ where: { id: req.params.id, storeId: req.storeAccess!.storeId } })
     );
-    if (!source?.fileUrl) throw ApiError.notFound("الملف");
-    const buffer = readStoredFile(source.fileUrl);
+    if (!source) throw ApiError.notFound("المصدر");
+    // No file at all: either the source was created from pasted text, or its
+    // upload's PUT failed and the route above deliberately kept the knowledge
+    // without the file.
+    if (!source.fileUrl) throw fileUnavailable();
+
+    // Two generations of values live in this column and there is no migration
+    // to tell them apart (old rows are deliberately left alone), so the SHAPE
+    // decides: a key minted by buildStorageKey() always begins with this
+    // store's `stores/<storeId>/knowledge/` prefix, while anything written
+    // before the storage provider was adopted is the old local-disk relative
+    // path `<storeId>/<uuid>.<ext>`. Comparing against the prefix of *this
+    // row's own store* rather than a bare "stores/" also means a value that
+    // somehow names another tenant can never be handed to the provider.
+    const storeId = req.storeAccess!.storeId;
+    const buffer = source.fileUrl.startsWith(storageKeyPrefix(storeId))
+      ? await getStorageProvider().get(source.fileUrl)
+      : readLegacyLocalFile(storeId, source.fileUrl);
+
+    // Missing bytes are an expected, ordinary outcome here — every legacy row
+    // on Render points at a disk that was reclaimed on some past deploy — so
+    // this is a clean 404 in Arabic, not a 500. Nothing is broken and no retry
+    // will help; the file is simply gone.
+    if (!buffer) throw fileUnavailable();
+
     res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(source.title)}"`);
     res.send(buffer);
   })

@@ -1,14 +1,59 @@
 import { Prisma } from "@prisma/client";
 import { retrieveBestChunk, isGreeting } from "./retrieval";
 import { generateGroundedAnswer } from "../../lib/llm";
+import { costMicroUsd } from "../../lib/llmPricing";
 
 export type ConfidenceLevel = "high" | "medium" | "low";
+
+/**
+ * What one reply actually cost us, resolved at the moment of the call.
+ * Priced here rather than at persistence time because the model id is only
+ * known at the call site — a later job reading ai_response_logs could not
+ * re-derive which model (and therefore which rate) produced a given row.
+ */
+export interface AiReplyUsage {
+  inputTokens: number;
+  outputTokens: number;
+  costMicroUsd: number;
+  model: string;
+}
 
 export interface AiPipelineResult {
   confidenceLevel: ConfidenceLevel;
   replyText: string | null; // null when escalated straight to a human
   createTicket: boolean;
   escalationReason?: string;
+  // Absent on every branch that answers without spending provider tokens
+  // (greeting shortcut, escalation ack, paused store, exhausted quota) and
+  // when no API key is configured. Absent must stay distinguishable from
+  // zero: "this reply was free" and "we don't know what it cost" are
+  // different facts when reporting margin per store, which is why the
+  // matching ai_response_logs columns are nullable too.
+  usage?: AiReplyUsage;
+}
+
+/**
+ * The ai_response_logs columns for a reply, ready to spread into the
+ * `data` of that row's create(). Kept here beside AiReplyUsage so the two
+ * persistence sites (channels/webhook.ts Phase 4 and
+ * simulation/publicRoutes.ts Phase 4) stay identical without either of them
+ * having to know how usage is shaped or priced:
+ *
+ *   data: { ...existing, ...aiResponseLogUsageFields(result) }
+ *
+ * Returns an empty object when there is no usage, so the row's nullable
+ * columns are left NULL rather than being written as a misleading 0.
+ */
+export function aiResponseLogUsageFields(
+  result: Pick<AiPipelineResult, "usage">
+): { inputTokens: number; outputTokens: number; costMicroUsd: number; model: string } | Record<string, never> {
+  if (!result.usage) return {};
+  return {
+    inputTokens: result.usage.inputTokens,
+    outputTokens: result.usage.outputTokens,
+    costMicroUsd: result.usage.costMicroUsd,
+    model: result.usage.model,
+  };
 }
 
 export interface AiContext {
@@ -118,7 +163,22 @@ export async function completeAiPipeline(
 
   return {
     confidenceLevel: context.confidenceLevel,
-    replyText: grounded ?? context.bestChunkContent,
+    // `grounded` is null with no API key, and grounded.text can be null if
+    // the provider answered with no text block — both still fall back to the
+    // retrieved knowledge chunk verbatim, exactly as before metering existed.
+    replyText: grounded?.text ?? context.bestChunkContent,
     createTicket: false,
+    // Priced only when the provider actually reported usage. A call that
+    // failed (grounded === null) genuinely cost us nothing billable, and one
+    // that returned text without a usage block leaves the cost unknown —
+    // neither should be recorded as a zero-cost success.
+    usage: grounded?.usage
+      ? {
+          inputTokens: grounded.usage.inputTokens,
+          outputTokens: grounded.usage.outputTokens,
+          costMicroUsd: costMicroUsd(grounded.model, grounded.usage),
+          model: grounded.model,
+        }
+      : undefined,
   };
 }

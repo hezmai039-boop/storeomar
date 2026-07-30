@@ -7,3 +7,7 @@ dist/
 backend/uploads/
 *.log
 .DS_Store
+
+# نسخ قاعدة البيانات — تحتوي بيانات عملاء وبيانات اعتماد مشفّرة
+backups/
+*.dump

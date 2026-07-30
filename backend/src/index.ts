@@ -18,6 +18,8 @@ import { auditRouter } from "./modules/audit/routes";
 import { aiIntelligenceRouter } from "./modules/ai-intelligence/routes";
 import { simulationRouter } from "./modules/simulation/routes";
 import { simulationPublicRouter } from "./modules/simulation/publicRoutes";
+import { billingRouter } from "./modules/billing/routes";
+import { oauthConnectRouter, oauthCallbackRouter } from "./modules/integrations/oauth/routes";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -33,11 +35,33 @@ app.use("/v1/webhooks", integrationWebhooksRouter);
 app.use(express.json({ limit: "5mb" }));
 app.use("/v1", apiRateLimiter);
 app.use("/v1/auth/login", authRateLimiter);
+// The rest of the public auth surface gets the same tight bucket as login,
+// for the same reason: each of these is a scripted attack in its own right —
+// signup mints tenants (and mail) for free, forgot-password sprays an
+// address list through our sending domain, reset-password/verify-email are
+// where someone grinds tokens. They deliberately share one per-IP counter
+// with login rather than getting their own, so an attacker can't just move
+// to the next endpoint after exhausting one.
+app.use("/v1/auth/signup", authRateLimiter);
+app.use("/v1/auth/verify-email", authRateLimiter);
+app.use("/v1/auth/resend-verification", authRateLimiter);
+app.use("/v1/auth/forgot-password", authRateLimiter);
+app.use("/v1/auth/reset-password", authRateLimiter);
 
 // Liveness — "is the process up?". Cheap, no dependencies, never touches
 // the DB, so a DB hiccup can't cause the orchestrator to kill a healthy
 // process. This is what Render's health check should point at.
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
+
+// Public runtime flags the SPA needs BEFORE anyone is logged in — it has no
+// build-time knowledge of how this deployment is configured, and a signup
+// link that only fails on submit is worse than no link at all.
+//
+// Only ever expose flags that are already observable from outside: whether
+// signup is open is something anyone can discover by POSTing to it. This
+// endpoint must never grow a value that isn't (keys, provider names, limits
+// that reveal internal capacity).
+app.get("/v1/public/config", (_req, res) => res.json({ data: { signupEnabled: env.signupEnabled } }));
 
 // Readiness — "can it actually serve traffic?". Pings the DB with a trivial
 // query. Use this for uptime monitoring / pre-traffic gating, NOT for
@@ -64,14 +88,28 @@ app.get("/health/ready", async (_req, res) => {
 // store owner's own session once that token expired.)
 app.use("/v1/public/simulate", simulationPublicRouter);
 
+// The Salla/Zid OAuth callback, mounted here for exactly the same reason as
+// the simulation route above: it is a genuinely public, tokenless route
+// (the platform redirects the merchant's BROWSER to it, with no
+// Authorization header), and the routers mounted at the bare "/v1" prefix
+// below each call `.use(authenticate)` unconditionally — which would 401
+// every install before Express reached this handler. Its own authentication
+// is the single-use `state` row; see modules/integrations/oauth/routes.ts.
+app.use("/v1/integrations/oauth", oauthCallbackRouter);
+
 app.use("/v1", identityRouter);
 app.use("/v1", tenancyRouter);
 app.use("/v1/stores/:storeId", channelsRouter);
 app.use("/v1/stores/:storeId/knowledge", knowledgeRouter);
 app.use("/v1/stores/:storeId", ticketsRouter);
 app.use("/v1/stores/:storeId", integrationsRouter);
+// Authenticated half of the OAuth flow ("install the app" button).
+app.use("/v1/stores/:storeId", oauthConnectRouter);
 app.use("/v1/stores/:storeId/ai-intelligence", aiIntelligenceRouter);
 app.use("/v1/stores/:storeId/simulation-links", simulationRouter);
+// Organization-scoped, so it gets its own prefix rather than a
+// /v1/stores/:storeId mount — there is no store in a billing path.
+app.use("/v1/billing", billingRouter);
 app.use("/v1", analyticsRouter);
 app.use("/v1", auditRouter);
 

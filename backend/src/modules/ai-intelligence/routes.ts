@@ -5,7 +5,7 @@ import { asyncHandler } from "../../lib/asyncHandler";
 import { ApiError } from "../../lib/errors";
 import { authenticate } from "../../middleware/auth";
 import { requirePermission, requireStoreAccess } from "../../middleware/rbac";
-import { PERMISSIONS } from "../../lib/permissions";
+import { PERMISSIONS, QUOTA_KEYS } from "../../lib/permissions";
 import { writeAudit } from "../../lib/audit";
 import { buildPageMeta, decodeCursor } from "../../lib/pagination";
 import { createTicketFromConversation } from "../tickets/service";
@@ -13,6 +13,7 @@ import { ensureDefaultSpecialists } from "./specialists";
 import { listToolCatalog } from "./tools/registry";
 import { gatherOrchestratorContext, completeOrchestratorRun } from "./orchestrator";
 import { getCustomerMemory } from "./memory";
+import { recordAiUsage, checkQuota } from "../billing/service";
 
 export const aiIntelligenceRouter = Router({ mergeParams: true });
 aiIntelligenceRouter.use(authenticate, requireStoreAccess());
@@ -128,8 +129,40 @@ aiIntelligenceRouter.post(
       })
     );
 
+    // Same quota gate the live message paths enforce in aiRouter. This route
+    // drives the orchestrator directly, so it inherited none of it: an
+    // organization past its monthly limit could keep running the full
+    // multi-round tool loop from the dashboard, spending the platform's
+    // Anthropic budget on exactly the account that has already exhausted
+    // what it pays for. Refused before the network call, not after.
+    const quota = await checkQuota(conversation.store.organizationId, QUOTA_KEYS.AI_REPLIES_MONTHLY);
+    if (!quota.allowed) {
+      throw new ApiError(403, "PLAN_QUOTA_EXCEEDED", "تجاوزت الحد الشهري للردود الآلية في باقتك الحالية", {
+        quota: QUOTA_KEYS.AI_REPLIES_MONTHLY,
+        used: quota.used,
+        limit: quota.limit,
+      });
+    }
+
     // Phase 2 (network, no transaction open) — the tool-calling agent loop.
     const result = await completeOrchestratorRun(context);
+
+    // This route drives the orchestrator directly instead of going through
+    // aiRouter, so it does not inherit aiRouter's metering — and a tool loop
+    // run from here costs exactly what one run from a live customer message
+    // costs. Left unmetered, an owner testing the advanced engine from the
+    // dashboard spends the platform's Anthropic budget invisibly, and the
+    // per-store cost report understates precisely the stores experimenting
+    // most. Fire-and-forget with a catch, matching aiRouter: recordAiUsage
+    // is contractually non-throwing, and metering must never delay or fail
+    // the answer it is measuring.
+    if (result.usage) {
+      void recordAiUsage(conversation.store.organizationId, {
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+        costMicroUsd: result.usage.costMicroUsd,
+      }).catch(() => {});
+    }
 
     // Phase 3 (short transaction) — auto-escalate to a ticket if the
     // agent didn't already do so itself via the CreateEscalationTicket

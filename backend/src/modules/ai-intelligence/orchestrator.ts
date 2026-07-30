@@ -7,6 +7,13 @@ import { getTool } from "./tools/registry";
 import { runAgentWithTools, AgentToolCall } from "./agentRuntime";
 import { refreshConversationMemory } from "./memory";
 import { hybridSearchKnowledge } from "./hybridSearch";
+import { costMicroUsd } from "../../lib/llmPricing";
+// Type-only (erased at compile time, so no runtime cycle with aiRouter).
+// Reusing the classic path's shape rather than declaring a parallel one is
+// deliberate: aiRouter can then assign it straight onto
+// AiPipelineResult.usage with no translation step to drift out of sync,
+// and there stays exactly one definition of "what a reply cost".
+import type { AiReplyUsage } from "../knowledge/aiPipeline";
 
 export type OrchestratorConfidence = "high" | "medium" | "low";
 
@@ -27,6 +34,19 @@ export interface OrchestratorResult {
   confidence: OrchestratorConfidence;
   escalate: boolean;
   toolCalls: AgentToolCall[];
+  /**
+   * What this whole run cost, summed over all of its tool-loop round-trips
+   * and priced here (where the model id is known) exactly like the classic
+   * path prices in completeAiPipeline.
+   *
+   * Optional, and absent rather than zeroed whenever the provider never
+   * reported anything usable — no API key, a failure before the first
+   * response, or a malformed usage block. Absent ≠ zero: "this reply was
+   * free" and "we don't know what it cost" are different facts when
+   * reporting per-store margin, which is why the matching ai_response_logs
+   * columns are nullable.
+   */
+  usage?: AiReplyUsage;
 }
 
 /**
@@ -115,7 +135,8 @@ async function logOrchestratorRun(
   context: OrchestratorContext,
   replyText: string | null,
   confidence: OrchestratorConfidence,
-  escalated: boolean
+  escalated: boolean,
+  cost?: { usage: AiReplyUsage; roundTrips: number }
 ) {
   await withStoreContext([context.storeId], (tx) =>
     tx.aiOrchestratorRun.create({
@@ -128,6 +149,18 @@ async function logOrchestratorRun(
         confidence: confidenceToDecimal(confidence),
         escalated,
         replyText,
+        // Spread to nothing when the run spent nothing knowable (no API key,
+        // or a failure before the first call), leaving the nullable columns
+        // NULL rather than a 0 that would read as "this run was free".
+        ...(cost
+          ? {
+              inputTokens: cost.usage.inputTokens,
+              outputTokens: cost.usage.outputTokens,
+              costMicroUsd: cost.usage.costMicroUsd,
+              model: cost.usage.model,
+              roundTrips: cost.roundTrips,
+            }
+          : {}),
       },
     })
   );
@@ -202,7 +235,46 @@ export async function completeOrchestratorRun(context: OrchestratorContext): Pro
   const confidence: OrchestratorConfidence = !result.replyText ? "low" : hasStrongGrounding ? "high" : "medium";
   const escalate = confidence === "low";
 
-  await logOrchestratorRun(context, result.replyText, confidence, escalate);
+  // Priced here, at the call site, because this is the only place the model
+  // id that produced these tokens is known — a later job reading the logs
+  // could not re-derive which rate applied. Reuses lib/llmPricing's single
+  // table (never a second copy of the rates), and costMicroUsd is
+  // contractually non-throwing, so metering cannot break a customer reply.
+  //
+  // `result.usage` is the sum over every round-trip of the tool loop, not
+  // just the final answer's turn: the loop re-sends a growing transcript
+  // each round, so pricing only the last turn would understate exactly the
+  // conversations that cost the most.
+  //
+  // The totals are ALSO written onto the run row (below), not just onto the
+  // reply's ai_response_logs row. Both matter and they answer different
+  // questions: the reply row is what billing and the margin report read,
+  // while the run row is the only place that knows how many round trips
+  // produced that cost — which is what distinguishes "this store is
+  // expensive because of traffic" from "this store's tool loop keeps
+  // spinning". Without roundTrips beside the cost, a store that quietly
+  // exhausts MAX_TOOL_ROUNDS on every message is indistinguishable from a
+  // busy one.
+  const usage: AiReplyUsage | undefined = result.usage
+    ? {
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+        costMicroUsd: costMicroUsd(result.model, result.usage),
+        model: result.model,
+      }
+    : undefined;
 
-  return { replyText: result.replyText, confidence, escalate, toolCalls: result.toolCalls };
+  // Logged after pricing so the run row carries the cost. Deliberately not
+  // awaited-and-thrown: a failure to write the forensic row must not lose a
+  // reply the customer is waiting for, and this row is diagnostics — the
+  // billing-critical copy is on ai_response_logs.
+  await logOrchestratorRun(
+    context,
+    result.replyText,
+    confidence,
+    escalate,
+    usage ? { usage, roundTrips: result.roundTrips } : undefined
+  ).catch((err) => console.error("[orchestrator] logOrchestratorRun failed:", err));
+
+  return { replyText: result.replyText, confidence, escalate, toolCalls: result.toolCalls, usage };
 }

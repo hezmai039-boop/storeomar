@@ -2,10 +2,35 @@ import { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import { env } from "../config/env";
 import { ApiError } from "../lib/errors";
+import { asyncHandler } from "../lib/asyncHandler";
+import { prisma } from "../db/prisma";
+import { TtlCache } from "../lib/ttlCache";
+
+/**
+ * Cached because the version check runs on EVERY authenticated request, and
+ * an uncached lookup means one extra database round trip per API call — on
+ * Render the database is a separate service across the network, so that is
+ * real added latency on every request for a value that changes only when
+ * someone changes their password.
+ *
+ * Exported so the password-change and reset paths can drop the entry the
+ * instant they bump the version; the 30s TTL is only the ceiling for an
+ * instance that missed the invalidation broadcast.
+ */
+export const sessionCache = new TtlCache<{ tokenVersion: number; status: string } | null>("session", 30_000);
 
 export interface AuthPayload {
   userId: string;
   organizationId: string;
+  /**
+   * Snapshot of users.token_version at signing time, compared on every
+   * request so a password change evicts open sessions immediately.
+   *
+   * Optional because tokens signed before this shipped do not carry it;
+   * those read as version 0, which matches the column default, so the
+   * deploy itself logs nobody out.
+   */
+  tokenVersion?: number;
 }
 
 declare global {
@@ -21,17 +46,45 @@ export function signToken(payload: AuthPayload): string {
   return jwt.sign(payload, env.jwtSecret, { expiresIn: env.jwtExpiresIn as jwt.SignOptions["expiresIn"] });
 }
 
-export function authenticate(req: Request, _res: Response, next: NextFunction) {
+/**
+ * Verifies the signature, then checks the token against the user's current
+ * token_version.
+ *
+ * The version check costs one indexed lookup per request. Without it a JWT
+ * is valid for its full 8h purely because it is signed — so an attacker
+ * holding a stolen token keeps access for hours after the victim changes
+ * their password, which is the one action taken specifically to stop them.
+ * Stateless tokens cannot be revoked; a version column is the cheapest way
+ * to make them revocable without introducing a session store.
+ */
+export const authenticate = asyncHandler(async (req: Request, _res: Response, next: NextFunction) => {
   const header = req.header("authorization");
   if (!header?.startsWith("Bearer ")) {
     return next(ApiError.unauthorized());
   }
+
+  let decoded: AuthPayload;
   try {
-    const token = header.slice("Bearer ".length);
-    const decoded = jwt.verify(token, env.jwtSecret) as AuthPayload;
-    req.auth = { userId: decoded.userId, organizationId: decoded.organizationId };
-    next();
+    decoded = jwt.verify(header.slice("Bearer ".length), env.jwtSecret) as AuthPayload;
   } catch {
-    next(ApiError.unauthorized("جلسة غير صالحة أو منتهية"));
+    return next(ApiError.unauthorized("جلسة غير صالحة أو منتهية"));
   }
-}
+
+  const user = await sessionCache.get(decoded.userId, () =>
+    prisma.user.findUnique({
+      where: { id: decoded.userId },
+      select: { tokenVersion: true, status: true },
+    })
+  );
+  // A deleted or suspended account's tokens stop working here too, instead
+  // of staying valid until they happen to expire.
+  if (!user || user.status !== "active") {
+    return next(ApiError.unauthorized("جلسة غير صالحة أو منتهية"));
+  }
+  if ((decoded.tokenVersion ?? 0) !== user.tokenVersion) {
+    return next(ApiError.unauthorized("انتهت الجلسة بعد تغيير كلمة المرور — سجّل الدخول مجددًا"));
+  }
+
+  req.auth = { userId: decoded.userId, organizationId: decoded.organizationId };
+  next();
+});

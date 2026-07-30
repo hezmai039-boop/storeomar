@@ -186,6 +186,22 @@ export function AppShell() {
           )}
         </ul>
 
+        {/* Billing is organization-scoped, not store-scoped: a store manager
+            holds billing.view but never sees the owner-only «المؤسسة» group
+            above, so it gets its own entry rather than living in either. */}
+        {can(PERMISSIONS.BILLING_VIEW) && (
+          <>
+            <div className="nav-group-label">الاشتراك</div>
+            <ul className="nav">
+              <li>
+                <NavLink to="/billing" className={({ isActive }) => (isActive ? "is-active" : "")}>
+                  <span className="ic">◈</span> الاشتراك والفوترة
+                </NavLink>
+              </li>
+            </ul>
+          </>
+        )}
+
         <div className="sidebar-foot">Atlas · MVP قيد التطوير</div>
       </nav>
     </div>

@@ -13,7 +13,13 @@ import { SimulatePage } from "./pages/SimulatePage";
 import { OnboardingPage } from "./pages/OnboardingPage";
 import { StoresAdminPage } from "./pages/StoresAdminPage";
 import { AccountPage } from "./pages/AccountPage";
+import { BillingPage } from "./pages/BillingPage";
 import { LandingPage } from "./pages/LandingPage";
+import { LegalPage } from "./pages/LegalPage";
+import { SignupPage } from "./pages/SignupPage";
+import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
+import { ResetPasswordPage } from "./pages/ResetPasswordPage";
+import { VerifyEmailPage } from "./pages/VerifyEmailPage";
 import { InstallBanner } from "./pwa/InstallBanner";
 import { usePermissions, PERMISSIONS, PermissionKey } from "./lib/permissions";
 
@@ -61,6 +67,14 @@ function Shell() {
           <Route path="/tickets" element={<TicketsPage />} />
           <Route path="/account" element={<AccountPage />} />
           <Route
+            path="/billing"
+            element={
+              <RequirePermission permission={PERMISSIONS.BILLING_VIEW}>
+                <BillingPage />
+              </RequirePermission>
+            }
+          />
+          <Route
             path="/settings"
             element={
               <RequirePermission permission={PERMISSIONS.SETTINGS_MANAGE}>
@@ -87,6 +101,21 @@ export function App() {
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/simulate/:token" element={<SimulatePage />} />
+        {/* Must be reachable logged OUT: Salla's and Zid's app reviews and
+            every payment provider require a publicly fetchable privacy URL,
+            and a reviewer hitting a login wall fails the submission. Placed
+            above the "/*" authed catch-all for that reason. LegalPage picks
+            which document to render from the pathname itself. */}
+        <Route path="/privacy" element={<LegalPage />} />
+        <Route path="/terms" element={<LegalPage />} />
+        {/* Self-serve auth. All four must sit above the "/*" authed
+            catch-all: every one of them is reached by someone who has no
+            session (a new visitor, or a reset link opened in the phone's
+            mail app rather than the browser holding the login). */}
+        <Route path="/signup" element={<SignupPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route
           path="/*"
           element={

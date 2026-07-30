@@ -6,6 +6,7 @@ import { asyncHandler } from "../../lib/asyncHandler";
 import { getAdapter } from "./adapters/registry";
 import { ChannelAdapter, NormalizedInboundMessage } from "./adapters/types";
 import { gatherAiReply, completeAiReply } from "../knowledge/aiRouter";
+import { aiResponseLogUsageFields } from "../knowledge/aiPipeline";
 import { createTicketFromConversation } from "../tickets/service";
 import { publish } from "./realtime";
 import { decryptSecret } from "../../lib/crypto";
@@ -129,6 +130,10 @@ async function processInboundMessages(
             messageId: aiMsg.id,
             confidenceLevel: result.confidenceLevel,
             actionTaken: result.confidenceLevel === "high" ? "answered" : "flagged_for_review",
+            // Per-reply token cost. Spreads to nothing when the reply came
+            // from the key-less fallback path, leaving the columns NULL
+            // rather than a 0 that would read as "this reply was free".
+            ...aiResponseLogUsageFields(result),
           },
         });
       }
@@ -150,6 +155,14 @@ async function processInboundMessages(
             conversationId: conversation.id,
             confidenceLevel: result.confidenceLevel,
             actionTaken: "escalated_to_human",
+            // Usage goes on the message row only. Phase 4 writes TWO rows
+            // when a reply both answers and escalates — the normal shape on
+            // the advanced path, where an escalation still carries an
+            // acknowledgment — and the analytics report sums answered +
+            // flagged_for_review + escalated_to_human. Spreading the run's
+            // usage onto both rows double-counted the cost of exactly the
+            // most expensive conversations.
+            ...(aiMsgId ? {} : aiResponseLogUsageFields(result)),
           },
         });
       }

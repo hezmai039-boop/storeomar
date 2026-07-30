@@ -2,66 +2,24 @@ import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { PERMISSIONS, ROLE_PERMISSIONS, ROLES } from "../src/lib/permissions";
 import { encryptSecret } from "../src/lib/crypto";
+import { listIndustryTemplates } from "../src/lib/industryTemplates";
+import { seedReferenceData } from "./seed-reference";
 
 const prisma = new PrismaClient();
 
 async function main() {
   console.log("Seeding Atlas demo data...");
 
-  // --- Roles & permissions (mirrors src/lib/permissions.ts exactly) ---
-  const permissionRows = await Promise.all(
-    Object.entries(PERMISSIONS).map(([, key]) =>
-      prisma.permission.upsert({
-        where: { key },
-        create: { key, module: key.split(".")[0], description: key },
-        update: {},
-      })
-    )
-  );
-  const permissionByKey = new Map(permissionRows.map((p) => [p.key, p]));
+  // Roles, permissions, channel types and plans now live in
+  // prisma/seed-reference.ts, which the deploy entrypoint runs on every boot
+  // regardless of SEED_DEMO_DATA — production needs them and must not run
+  // the demo data below. Called here too so a single `npm run seed` on a
+  // fresh dev database still produces a complete, working environment.
+  await seedReferenceData(prisma);
 
-  const roleDefs = [
-    { key: ROLES.OWNER, name: "مالك", scope: "organization" },
-    { key: ROLES.STORE_MANAGER, name: "مدير متجر", scope: "store" },
-    { key: ROLES.AGENT, name: "موظف خدمة عملاء", scope: "store" },
-  ] as const;
-
-  const roleByKey = new Map<string, { id: string }>();
-  for (const def of roleDefs) {
-    const role = await prisma.role.upsert({
-      where: { key: def.key },
-      create: { key: def.key, name: def.name, scope: def.scope, isSystem: true },
-      update: {},
-    });
-    roleByKey.set(def.key, role);
-    for (const permKey of ROLE_PERMISSIONS[def.key]) {
-      const perm = permissionByKey.get(permKey)!;
-      await prisma.rolePermission.upsert({
-        where: { roleId_permissionId: { roleId: role.id, permissionId: perm.id } },
-        create: { roleId: role.id, permissionId: perm.id },
-        update: {},
-      });
-    }
-  }
-
-  // --- Channel types (extensible registry, docs/01-database-design.md §3) ---
-  const channelTypeDefs = [
-    { key: "whatsapp", name: "واتساب", adapterKey: "whatsapp-cloud-api" },
-    { key: "instagram", name: "إنستغرام", adapterKey: "meta-instagram-messaging" },
-    { key: "messenger", name: "ماسنجر", adapterKey: "meta-messenger" },
-    { key: "tiktok", name: "تيك توك", adapterKey: "tiktok-business-messaging" },
-    // Local-dev/demo channel — see src/modules/channels/adapters/mock.ts.
-    { key: "mock", name: "قناة تجريبية", adapterKey: "mock-console" },
-  ];
-  const channelTypeByKey = new Map<string, { id: string }>();
-  for (const def of channelTypeDefs) {
-    const ct = await prisma.channelType.upsert({
-      where: { key: def.key },
-      create: def,
-      update: {},
-    });
-    channelTypeByKey.set(def.key, ct);
-  }
+  const roleByKey = new Map((await prisma.role.findMany()).map((r) => [r.key, r]));
+  const channelTypeByKey = new Map((await prisma.channelType.findMany()).map((c) => [c.key, c]));
+  const planByKey = new Map((await prisma.plan.findMany()).map((p) => [p.key, p]));
 
   // --- Organization + owner ---
   const organization = await prisma.organization.upsert({
@@ -360,6 +318,87 @@ async function main() {
     },
     update: {},
   });
+
+  // NOT granted here. isPlatformAdmin is the only cross-tenant power in the
+  // codebase — GET /v1/billing/admin/invoices reads EVERY organization's
+  // invoices, and approve marks them paid — and this seed creates its owner
+  // with a password that is committed in this repository and printed below.
+  // Granting the flag here means anyone who has read the repo holds
+  // cross-tenant billing access on any deployment that was ever seeded.
+  //
+  // Opt in explicitly instead, per the flag's comment in schema.prisma:
+  //
+  //   SEED_PLATFORM_ADMIN=true npm run seed     (dev only)
+  //
+  // or, on a real deployment, by hand against the intended account after
+  // its password has been changed:
+  //
+  //   UPDATE users SET is_platform_admin = true WHERE email = '...';
+  if (process.env.SEED_PLATFORM_ADMIN === "true") {
+    await prisma.user.update({ where: { id: owner.id }, data: { isPlatformAdmin: true } });
+    console.log("⚠️  Granted isPlatformAdmin to the seeded owner (SEED_PLATFORM_ADMIN=true). Do not do this in production.");
+  }
+
+  // Every org starts on `free` so nothing in the app has to handle a null
+  // subscription — getEffectivePlan() falls back to `free` anyway, but a real
+  // row means the billing screen and the usage counters have something to
+  // point at from the first request.
+  const freePeriodEnd = new Date();
+  freePeriodEnd.setMonth(freePeriodEnd.getMonth() + 1);
+  await prisma.subscription.upsert({
+    where: { organizationId: organization.id },
+    create: {
+      organizationId: organization.id,
+      planId: planByKey.get("free")!.id,
+      status: "trialing",
+      provider: "manual",
+      currentPeriodEnd: freePeriodEnd,
+    },
+    update: {},
+  });
+
+  // ---------------------------------------------------------------------
+  // Telegram channel type (appended as its own block rather than folded
+  // into channelTypeDefs above, so this addition stays self-contained).
+  //
+  // Telegram is the fastest channel to connect — a BotFather token, no Meta
+  // business verification, no per-message fee — which makes it the channel
+  // a brand-new signup uses to see the product actually work
+  // (docs/27-telegram-setup.md). adapterKey matches telegramAdapter.key in
+  // src/modules/channels/adapters/telegram.ts.
+  // ---------------------------------------------------------------------
+  const telegramChannelType = await prisma.channelType.upsert({
+    where: { key: "telegram" },
+    create: { key: "telegram", name: "تيليجرام", adapterKey: "telegram" },
+    update: {},
+  });
+  channelTypeByKey.set("telegram", telegramChannelType);
+
+  // ---------------------------------------------------------------------
+  // Industry knowledge-base starter templates (src/lib/industryTemplates.ts).
+  //
+  // These are made AVAILABLE here, deliberately NOT attached to any store.
+  // docker-entrypoint.sh runs this seed on every deploy, so any code that
+  // wrote template rows into a store's knowledge base would re-inject
+  // placeholder Q&A ("[قيمة] ريال") into a LIVE customer's knowledge base
+  // on every redeploy — content their AI agent would then quote to real
+  // customers, and which they may have deliberately deleted. Same class of
+  // bug as the duplicated demo messages fixed above, but with a much worse
+  // blast radius because the output is customer-facing.
+  //
+  // Attaching a template is therefore always an explicit, audited act by a
+  // human during onboarding (which store, which industry, whose user id
+  // goes in knowledge_sources.created_by) — decisions this seed has no
+  // standing to make on a merchant's behalf. The templates are plain
+  // exported data, so that flow just imports them.
+  // ---------------------------------------------------------------------
+  const templates = listIndustryTemplates();
+  const templateEntryCount = templates.reduce((sum, t) => sum + t.entries.length, 0);
+  console.log(
+    `Industry starter templates available (not attached to any store): ${templates
+      .map((t) => `${t.key}(${t.entries.length})`)
+      .join(", ")} — ${templateEntryCount} entries total.`
+  );
 
   console.log("Seed complete.");
   console.log("Owner login: hezmai039@gmail.com / Owner!2026");

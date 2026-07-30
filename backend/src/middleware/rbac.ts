@@ -102,6 +102,55 @@ export function requirePermission(permission: PermissionKey) {
   };
 }
 
+/**
+ * Platform staff only — a strictly higher bar than requireOwner().
+ * requireOwner() means "top role inside this tenant", which every
+ * self-signed-up customer holds over their own organization. Actions that
+ * must never be self-served (confirming a bank transfer as received,
+ * approving an invoice) check this instead, so a customer cannot approve
+ * their own payment. Reads users.is_platform_admin, which no API route
+ * writes.
+ */
+export function requirePlatformAdmin() {
+  return asyncHandler(async (req: Request, _res: Response, next: NextFunction) => {
+    const user = await prisma.user.findUnique({
+      where: { id: req.auth!.userId },
+      select: { isPlatformAdmin: true },
+    });
+    if (!user?.isPlatformAdmin) throw ApiError.permissionDenied("platform.admin");
+    next();
+  });
+}
+
+/**
+ * Organization-scoped permission check, for routes with no `:storeId` in
+ * the path — billing is the whole reason this exists.
+ *
+ * requirePermission() cannot serve here: it reads req.storeAccess, which
+ * requireStoreAccess() populates from a store id in the URL. Billing routes
+ * have no store, so before this existed they were authenticated but
+ * otherwise ungated — an `agent`, the lowest role, could read the
+ * organization's plan, invoice history, bank transfer references, and
+ * `usage.costMicroUsd`, which is the platform's raw provider cost for that
+ * tenant. That is internal margin data.
+ *
+ * Grants if the caller holds `permission` through their organization role
+ * or through a role on ANY store in the org — a store_manager legitimately
+ * needs billing.view without being an org owner.
+ */
+export function requireOrgPermission(permission: PermissionKey) {
+  return asyncHandler(async (req: Request, _res: Response, next: NextFunction) => {
+    const { userId, organizationId } = req.auth!;
+    const access = await resolveAccess(userId, organizationId);
+
+    const roles: RoleKey[] = access.isOwner ? [ROLES.OWNER] : Array.from(new Set(Array.from(access.storeRoles.values()).flat()));
+    if (!roles.some((role) => roleHasPermission(role, permission))) {
+      throw ApiError.permissionDenied(permission);
+    }
+    next();
+  });
+}
+
 /** For organization-level routes (e.g. cross-store owner reports) — no storeId in the path. */
 export function requireOwner() {
   return asyncHandler(async (req: Request, _res: Response, next: NextFunction) => {

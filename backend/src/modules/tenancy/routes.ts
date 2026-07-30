@@ -7,12 +7,37 @@ import { asyncHandler } from "../../lib/asyncHandler";
 import { ApiError } from "../../lib/errors";
 import { authenticate } from "../../middleware/auth";
 import { accessibleStoreIdsFor, requirePermission, requireStoreAccess, requireOwner } from "../../middleware/rbac";
-import { PERMISSIONS, ROLES } from "../../lib/permissions";
+import { PERMISSIONS, ROLES, QUOTA_KEYS, QuotaKey } from "../../lib/permissions";
+import { checkQuota } from "../billing/service";
 import { writeAudit } from "../../lib/audit";
 import bcrypt from "bcryptjs";
 
 export const tenancyRouter = Router();
 tenancyRouter.use(authenticate);
+
+/**
+ * Plan-limit gate for the creation routes below.
+ *
+ * Deliberately a 403 with its own code rather than a 400/409: the request is
+ * perfectly well-formed and the actor is fully authorized — what blocks it
+ * is a commercial limit. PLAN_QUOTA_EXCEEDED lets the frontend show an
+ * upgrade prompt instead of a generic validation error, and keeps it
+ * distinguishable from PERMISSION_DENIED (which no upgrade would fix).
+ *
+ * The message names the actual number from the plan, because "لا يمكنك
+ * إضافة متجر" leaves the owner guessing whether it's a bug, a permission
+ * problem, or a limit they can lift by paying.
+ */
+async function enforceQuota(organizationId: string, key: QuotaKey, message: (limit: number | null) => string) {
+  const quota = await checkQuota(organizationId, key);
+  if (!quota.allowed) {
+    throw new ApiError(403, "PLAN_QUOTA_EXCEEDED", message(quota.limit), {
+      quota: key,
+      used: quota.used,
+      limit: quota.limit,
+    });
+  }
+}
 
 // GET /v1/organizations/:orgId
 tenancyRouter.get(
@@ -44,6 +69,11 @@ tenancyRouter.post(
   requireOwner(),
   asyncHandler(async (req, res) => {
     const body = createStoreSchema.parse(req.body);
+    await enforceQuota(
+      req.auth!.organizationId,
+      QUOTA_KEYS.STORES,
+      (limit) => `تجاوزت عدد المتاجر المسموح في باقتك (${limit ?? "غير محدود"}). قم بالترقية لإضافة متجر جديد.`
+    );
     const store = await prisma.store.create({
       data: { organizationId: req.auth!.organizationId, name: body.name, slug: body.slug, currency: body.currency },
     });
@@ -98,12 +128,31 @@ tenancyRouter.post(
     const organizationId = req.params.orgId;
 
     // Preflight, with clear Arabic errors before we touch anything.
+    // The plan limits come first: this route provisions a store AND a login
+    // in one transaction, so failing on quota only after the owner filled in
+    // a password would be needlessly rude.
+    await enforceQuota(
+      organizationId,
+      QUOTA_KEYS.STORES,
+      (limit) => `تجاوزت عدد المتاجر المسموح في باقتك (${limit ?? "غير محدود"}). قم بالترقية لإضافة متجر جديد.`
+    );
+
     const slugTaken = await prisma.store.findFirst({ where: { organizationId, slug: body.slug } });
     if (slugTaken) throw ApiError.badRequest("هذا المعرّف (slug) مستخدم بالفعل — اختر معرّفًا مختلفًا");
 
     const existingUser = await prisma.user.findUnique({ where: { email: body.ownerEmail } });
     if (existingUser && existingUser.organizationId !== organizationId) {
       throw ApiError.badRequest("هذا البريد مسجّل بالفعل لمؤسسة أخرى");
+    }
+    // Only a NEW login consumes a seat — reusing an existing user of this
+    // organization for a second store adds no user row, so charging it
+    // against the users quota would block a legitimate free operation.
+    if (!existingUser) {
+      await enforceQuota(
+        organizationId,
+        QUOTA_KEYS.USERS,
+        (limit) => `تجاوزت عدد المستخدمين المسموح في باقتك (${limit ?? "غير محدود"}). قم بالترقية لإضافة مستخدم جديد.`
+      );
     }
 
     const storeManagerRole = await prisma.role.findUniqueOrThrow({ where: { key: ROLES.STORE_MANAGER } });
@@ -184,6 +233,15 @@ tenancyRouter.post(
     const existingUser = await prisma.user.findUnique({ where: { email: body.ownerEmail } });
     if (existingUser && existingUser.organizationId !== organizationId) {
       throw ApiError.badRequest("هذا البريد مسجّل بالفعل لمؤسسة أخرى");
+    }
+    // Same rule as onboard-store: granting an EXISTING user access to one
+    // more store is free; minting a new login is what consumes a seat.
+    if (!existingUser) {
+      await enforceQuota(
+        organizationId,
+        QUOTA_KEYS.USERS,
+        (limit) => `تجاوزت عدد المستخدمين المسموح في باقتك (${limit ?? "غير محدود"}). قم بالترقية لإضافة مستخدم جديد.`
+      );
     }
     const storeManagerRole = await prisma.role.findUniqueOrThrow({ where: { key: ROLES.STORE_MANAGER } });
 

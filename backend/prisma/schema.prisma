@@ -6,8 +6,31 @@ generator client {
 }
 
 datasource db {
-  provider   = "postgresql"
-  url        = env("DATABASE_URL")
+  provider = "postgresql"
+  // Pooled connection for the running app. On Neon (and any PgBouncer in
+  // transaction-pooling mode) this is the `-pooler` host with
+  // `?pgbouncer=true`, which tells Prisma to stop using prepared statements —
+  // PgBouncer cannot carry them across the connections it multiplexes.
+  //
+  // Everything the app does at runtime is compatible with transaction
+  // pooling, and that is not an accident: withStoreContext uses `SET LOCAL`
+  // (transaction-scoped, not session-scoped) and invoice numbering uses
+  // pg_advisory_xact_lock (released at commit) rather than the session-level
+  // pg_advisory_lock. Either of the session variants would silently leak
+  // state onto whichever connection PgBouncer handed out next.
+  url = env("DATABASE_URL")
+  // UNPOOLED connection, used only by the Prisma CLI for migrate/diff.
+  //
+  // Migrations cannot run through a transaction pooler: they take session
+  // advisory locks, issue multi-statement DDL that must land on one backend,
+  // and rely on session state PgBouncer does not preserve. Without this,
+  // `prisma migrate deploy` against a pgbouncer URL fails — or worse,
+  // applies part of a migration and records it as done.
+  //
+  // On Neon this is the same connection string with `-pooler` REMOVED from
+  // the host and without `pgbouncer=true`. Falls back to DATABASE_URL so a
+  // plain local Postgres (no pooler) needs no second variable.
+  directUrl = env("DIRECT_DATABASE_URL")
   extensions = [vector]
 }
 
@@ -23,10 +46,13 @@ model Organization {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  stores    Store[]
-  users     User[]
-  members   OrganizationMember[]
-  auditLogs AuditLog[]
+  stores        Store[]
+  users         User[]
+  members       OrganizationMember[]
+  auditLogs     AuditLog[]
+  subscription  Subscription?
+  usageCounters UsageCounter[]
+  invoices      Invoice[]
 
   @@map("organizations")
 }
@@ -85,6 +111,27 @@ model User {
   phone          String?
   passwordHash   String    @map("password_hash")
   status         String    @default("active")
+  // Null until the signup email link is redeemed. Deliberately NOT a
+  // login blocker: a self-signed-up owner can use the dashboard right
+  // away (abandoning them at a "check your email" wall is where signup
+  // funnels die). What it gates is outbound reach — connecting a real
+  // channel — so an unverified address can never be used to pump
+  // messages at other people's customers.
+  emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz(6)
+  // Platform staff, not tenant staff. `owner` is the top role INSIDE an
+  // organization — once clients sign themselves up (phase 3), every client
+  // is an owner of their own org, so owner cannot be what authorizes
+  // "confirm this bank transfer was actually received": that would let any
+  // customer approve their own invoice and run free forever. This flag is
+  // the only thing that gates the billing admin routes, and nothing in the
+  // API can set it — it is granted by the seed or by hand in the DB.
+  isPlatformAdmin Boolean  @default(false) @map("is_platform_admin")
+  // Bumped whenever the password changes. JWTs are stateless and live 8h,
+  // so without this a stolen token keeps working for up to 8 hours AFTER
+  // the victim performs the recovery action whose whole purpose is to evict
+  // the attacker. Carried in the token and compared on every request, so a
+  // password change invalidates every session that user had open.
+  tokenVersion    Int      @default(0) @map("token_version")
   lastLoginAt    DateTime? @map("last_login_at") @db.Timestamptz(6)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -100,6 +147,8 @@ model User {
   ticketEvents           TicketEvent[]
   auditLogs              AuditLog[]
   createdSimulationLinks SimulationLink[]
+  reviewedInvoices       Invoice[]              @relation("InvoiceReviewer")
+  authTokens             AuthToken[]
 
   @@map("users")
 }
@@ -377,6 +426,14 @@ model AiResponseLog {
   messageId       String?  @unique @map("message_id") @db.Uuid
   confidenceLevel String   @map("confidence_level")
   actionTaken     String   @map("action_taken")
+  // Per-reply provider usage. Nullable because every row written before
+  // billing shipped has no usage data, and because a paused/failed reply
+  // legitimately consumes nothing — 0 and "unknown" must stay
+  // distinguishable when reporting cost per store.
+  inputTokens     Int?     @map("input_tokens")
+  outputTokens    Int?     @map("output_tokens")
+  costMicroUsd    Int?     @map("cost_micro_usd")
+  model           String?
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   store        Store        @relation(fields: [storeId], references: [id])
@@ -455,6 +512,11 @@ model Integration {
   platform             String // salla | zid | shopify | woocommerce
   credentialsEncrypted Bytes     @map("credentials_encrypted")
   status               String    @default("connected")
+  // Mirrors the expiry inside credentials_encrypted so "which tokens need
+  // refreshing?" is an indexed query instead of decrypting every row on
+  // every sweep. The encrypted blob stays authoritative; this is a cache.
+  // Null for platforms whose tokens don't expire (or a hand-pasted token).
+  tokenExpiresAt       DateTime? @map("token_expires_at") @db.Timestamptz(6)
   lastSyncedAt         DateTime? @map("last_synced_at") @db.Timestamptz(6)
   createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -606,6 +668,17 @@ model AiOrchestratorRun {
   confidence        Decimal? @db.Decimal(3, 2)
   escalated         Boolean  @default(false)
   replyText         String?  @map("reply_text")
+  // Per-RUN provider cost. ai_response_logs carries the same totals for the
+  // reply, but only the run row knows how many round trips it took — which
+  // is what tells you whether a store is expensive because of traffic or
+  // because its tool loop keeps going. Nullable: a run with no API key, or
+  // one that failed before any call, spent nothing knowable, and 0 would
+  // read as "this was free".
+  inputTokens       Int?     @map("input_tokens")
+  outputTokens      Int?     @map("output_tokens")
+  costMicroUsd      Int?     @map("cost_micro_usd")
+  model             String?
+  roundTrips        Int?     @map("round_trips")
   createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   store        Store        @relation(fields: [storeId], references: [id])
@@ -681,4 +754,190 @@ model SimulationLink {
 
   @@index([storeId])
   @@map("simulation_links")
+}
+
+// ------------------------------------------------------------------
+// 11. Billing — plans, subscriptions, usage quotas and invoices.
+//
+// Scoped to the ORGANIZATION, not the store: a customer buys one
+// subscription and it covers every store under their org (an agency
+// running 30 client stores pays once, against one message quota). That is
+// also why none of these tables appear in prisma/rls.sql — RLS keys off
+// `app.accessible_store_ids`, and these rows have no store_id to key on.
+// Their isolation comes from the API layer instead: every billing route
+// reads req.auth.organizationId, which comes from the signed JWT and can
+// never be supplied by the client. See docs/25-billing-and-plans.md.
+//
+// Payment provider is deliberately abstracted (modules/billing/adapters)
+// rather than hard-wired to one gateway — same registry pattern as
+// channels/ and integrations/. Ships with the `manual` provider (bank
+// transfer + owner confirmation), which needs no commercial registration
+// or gateway contract to start collecting real money. Adding Moyasar or
+// Tap later is one adapter file plus one line in the registry.
+// ------------------------------------------------------------------
+
+model Plan {
+  id       String  @id @default(uuid()) @db.Uuid
+  key      String  @unique // free | basic | pro
+  name     String
+  nameEn   String  @map("name_en")
+  // Price in HALALAS (SAR × 100). Integer on purpose — floats lose money.
+  priceHalalas Int  @map("price_halalas")
+  currency String  @default("SAR")
+  interval String  @default("monthly") // monthly | yearly
+  // Quotas. null = unlimited, so an enterprise plan doesn't need sentinel
+  // numbers like 999999 that later read as a bug.
+  maxStores        Int? @map("max_stores")
+  maxUsers         Int? @map("max_users")
+  maxAiRepliesMonthly Int? @map("max_ai_replies_monthly")
+  features Json    @default("[]")
+  isActive Boolean @default(true) @map("is_active")
+  sortOrder Int    @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  subscriptions Subscription[]
+  invoices      Invoice[]
+
+  @@map("plans")
+}
+
+model Subscription {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @unique @map("organization_id") @db.Uuid
+  planId         String   @map("plan_id") @db.Uuid
+  // trialing | active | past_due | canceled
+  status         String   @default("trialing")
+  provider       String   @default("manual") // manual | moyasar | tap
+  providerRef    String?  @map("provider_ref")
+  currentPeriodStart DateTime @default(now()) @map("current_period_start") @db.Timestamptz(6)
+  currentPeriodEnd   DateTime @map("current_period_end") @db.Timestamptz(6)
+  trialEndsAt    DateTime? @map("trial_ends_at") @db.Timestamptz(6)
+  canceledAt     DateTime? @map("canceled_at") @db.Timestamptz(6)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  plan         Plan         @relation(fields: [planId], references: [id])
+
+  @@index([status, currentPeriodEnd])
+  @@map("subscriptions")
+}
+
+model UsageCounter {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  // First day of the billing month, "YYYY-MM" — cheap to compute, cheap to
+  // index, and makes "this month's usage" a single unique lookup instead of
+  // a range scan over ai_response_logs on every inbound message.
+  period         String
+  aiReplies      Int      @default(0) @map("ai_replies")
+  inputTokens    BigInt   @default(0) @map("input_tokens")
+  outputTokens   BigInt   @default(0) @map("output_tokens")
+  // Accumulated provider cost in MICRO-USD (USD × 1_000_000). Integer for
+  // the same reason prices are: a per-message cost of $0.0003 is invisible
+  // to cents, and rounding it away hides the real margin per customer.
+  costMicroUsd   BigInt   @default(0) @map("cost_micro_usd")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, period])
+  @@index([period])
+  @@map("usage_counters")
+}
+
+model Invoice {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  planId         String   @map("plan_id") @db.Uuid
+  number         String   @unique // ATL-2026-0001
+  status         String   @default("pending") // pending | awaiting_review | paid | rejected | void
+  provider       String   @default("manual")
+  subtotalHalalas Int     @map("subtotal_halalas")
+  // 15% VAT in Saudi Arabia — stored, not derived, so an invoice issued
+  // before/after a rate change or before VAT registration stays reproducible
+  // exactly as it was sent. Zero is valid and expected below the mandatory
+  // registration threshold.
+  vatHalalas     Int      @default(0) @map("vat_halalas")
+  totalHalalas   Int      @map("total_halalas")
+  periodStart    DateTime @map("period_start") @db.Timestamptz(6)
+  periodEnd      DateTime @map("period_end") @db.Timestamptz(6)
+  // Manual provider: the customer's transfer reference + uploaded receipt.
+  transferRef    String?  @map("transfer_ref")
+  receiptUrl     String?  @map("receipt_url")
+  reviewedBy     String?  @map("reviewed_by") @db.Uuid
+  reviewedAt     DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  reviewNote     String?  @map("review_note")
+  paidAt         DateTime? @map("paid_at") @db.Timestamptz(6)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  plan         Plan         @relation(fields: [planId], references: [id])
+  reviewer     User?        @relation("InvoiceReviewer", fields: [reviewedBy], references: [id])
+
+  @@index([organizationId, createdAt])
+  @@index([status, createdAt])
+  @@map("invoices")
+}
+
+// ------------------------------------------------------------------
+// 12. Self-serve signup — email verification, password reset, and the
+// OAuth handshake state for store-platform integrations.
+//
+// One AuthToken table serves both email verification and password reset
+// rather than two near-identical tables: they share every column, every
+// expiry rule and every "consume exactly once" requirement, and a single
+// table means one place to get the security properties right.
+//
+// Tokens are stored HASHED, never in plaintext. A leaked database dump
+// must not hand over working password-reset links — the same reason
+// users.password_hash exists. The plaintext half only ever lives in the
+// email that was sent.
+// ------------------------------------------------------------------
+
+model AuthToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  // email_verify | password_reset
+  purpose   String
+  // SHA-256 of the token handed to the user. Unique so a lookup is an
+  // index hit rather than a scan, and so a collision is a hard error
+  // instead of two users sharing one link.
+  tokenHash String   @unique @map("token_hash")
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  // Set the moment the token is redeemed. A used token must fail exactly
+  // like an expired one — without this, a reset link forwarded or left in
+  // an inbox stays a working key to the account forever.
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+  @@index([expiresAt])
+  @@map("auth_tokens")
+}
+
+model OAuthState {
+  id        String   @id @default(uuid()) @db.Uuid
+  // Random, single-use. Sent to the platform as ?state= and required to
+  // match on the callback: without it, an attacker can hand a victim a
+  // crafted callback URL that binds the ATTACKER's Salla/Zid store to the
+  // victim's Atlas account (CSRF on the connect flow).
+  state     String   @unique
+  storeId   String   @map("store_id") @db.Uuid
+  platform  String // salla | zid
+  // Who initiated it — the callback runs in a fresh browser redirect with
+  // no auth header, so the connection is attributed from here, not from a
+  // session that isn't present.
+  userId    String   @map("user_id") @db.Uuid
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([expiresAt])
+  @@map("oauth_states")
 }

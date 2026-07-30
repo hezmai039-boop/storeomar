@@ -5,6 +5,7 @@ import { withStoreContext } from "../../db/withStoreContext";
 import { asyncHandler } from "../../lib/asyncHandler";
 import { simulationRateLimiter } from "../../lib/rateLimit";
 import { gatherAiReply, completeAiReply } from "../knowledge/aiRouter";
+import { aiResponseLogUsageFields } from "../knowledge/aiPipeline";
 import { createTicketFromConversation } from "../tickets/service";
 import { publish } from "../channels/realtime";
 import { resolveSimulationLink, ensureSimulationChannelAccount, withConflictRetry } from "./service";
@@ -147,6 +148,11 @@ simulationPublicRouter.post(
             messageId: aiMsg.id,
             confidenceLevel: result.confidenceLevel,
             actionTaken: result.confidenceLevel === "high" ? "answered" : "flagged_for_review",
+            // Simulation traffic costs real tokens against the same
+            // Anthropic bill as production, so it must be metered too —
+            // otherwise a store testing heavily looks free in the margin
+            // report while quietly being the most expensive tenant.
+            ...aiResponseLogUsageFields(result),
           },
         });
       }
@@ -168,6 +174,14 @@ simulationPublicRouter.post(
             conversationId: conversation.id,
             confidenceLevel: result.confidenceLevel,
             actionTaken: "escalated_to_human",
+            // Usage goes on the message row only. Phase 4 writes TWO rows
+            // when a reply both answers and escalates — the normal shape on
+            // the advanced path, where an escalation still carries an
+            // acknowledgment — and the analytics report sums answered +
+            // flagged_for_review + escalated_to_human. Spreading the run's
+            // usage onto both rows double-counted the cost of exactly the
+            // most expensive conversations.
+            ...(aiMsgId ? {} : aiResponseLogUsageFields(result)),
           },
         });
       }
