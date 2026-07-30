@@ -104,7 +104,7 @@ channelsRouter.post(
       try {
         await adapter.sendMessage(credentials, {
           toExternalId: body.testRecipientExternalId,
-          text: "رسالة اختبار من منصة Atlas — القناة متصلة بنجاح.",
+          text: "رسالة اختبار من منصة ميسور — القناة متصلة بنجاح.",
         });
         return tx.channelAccount.update({ where: { id: account.id }, data: { status: "connected" } });
       } catch (err) {

@@ -855,7 +855,7 @@ model Invoice {
   id             String   @id @default(uuid()) @db.Uuid
   organizationId String   @map("organization_id") @db.Uuid
   planId         String   @map("plan_id") @db.Uuid
-  number         String   @unique // ATL-2026-0001
+  number         String   @unique // MYS-2026-0001 (pre-rebrand rows: ATL-2026-0001)
   status         String   @default("pending") // pending | awaiting_review | paid | rejected | void
   provider       String   @default("manual")
   subtotalHalalas Int     @map("subtotal_halalas")
@@ -989,7 +989,7 @@ model OAuthState {
   // Random, single-use. Sent to the platform as ?state= and required to
   // match on the callback: without it, an attacker can hand a victim a
   // crafted callback URL that binds the ATTACKER's Salla/Zid store to the
-  // victim's Atlas account (CSRF on the connect flow).
+  // victim's Maysoor account (CSRF on the connect flow).
   state     String   @unique
   storeId   String   @map("store_id") @db.Uuid
   platform  String // salla | zid

@@ -13,8 +13,15 @@ import { env } from "../../config/env";
 
 type Rendered = { subject: string; html: string; text: string };
 
-const BRAND = "أطلس";
-const BRAND_COLOR = "#0f766e";
+const BRAND = "ميسور";
+// Maysoor navy. This value is used BOTH as text on white (the wordmark) and
+// as the CTA button's background under white text — 14.15:1 either way, so it
+// clears WCAG AA in both roles.
+//
+// Do NOT swap this for the brand orange (#FF6A00): orange with white text is
+// 2.87:1 and fails AA outright. Orange is only ever legible against navy text
+// (4.93:1), which is not the pairing the button below uses.
+const BRAND_COLOR = "#0D2C4D";
 
 /**
  * Links point at the FRONTEND (env.appUrl), not the API. The recipient is a
@@ -36,8 +43,8 @@ export function passwordResetLink(token: string): string {
  * straight from the public signup body with no character restriction. An
  * attacker can therefore sign up with a *victim's* email address and a name
  * of `<a href="https://evil.example">فعّل حسابك</a>`, and the platform will
- * mail that victim an attacker-authored link inside a genuine Atlas
- * template, from Atlas's own SPF/DKIM-valid domain. That is a far better
+ * mail that victim an attacker-authored link inside a genuine Maysoor
+ * template, from Maysoor's own SPF/DKIM-valid domain. That is a far better
  * phishing primitive than anything the attacker could send themselves.
  *
  * The `text` variants need no escaping — they are never parsed as markup.
@@ -72,7 +79,7 @@ function layout(params: { heading: string; paragraphs: string[]; buttonLabel: st
         <!-- dir="ltr" on the URL itself: an RTL container reorders a bare
              URL's slashes and query string on screen, and the customer
              copies a broken link. -->
-        <p dir="ltr" style="margin:0 0 24px;font-size:12px;color:#0f766e;word-break:break-all;text-align:left;">${escapeHtml(params.link)}</p>
+        <p dir="ltr" style="margin:0 0 24px;font-size:12px;color:${BRAND_COLOR};word-break:break-all;text-align:left;">${escapeHtml(params.link)}</p>
         <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0;" />
         <p style="margin:0;font-size:12px;color:#94a3b8;line-height:1.8;">${escapeHtml(params.footer)}</p>
       </td>

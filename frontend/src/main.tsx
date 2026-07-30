@@ -2,6 +2,10 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
+// Faces first, tokens second: tokens.css names "Tajawal"/"Inter" in
+// --font-body, and a family referenced before its @font-face is declared
+// resolves to the next fallback for that first paint.
+import "./styles/fonts.css";
 import "./styles/tokens.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

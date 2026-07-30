@@ -8,7 +8,7 @@ import path from "node:path";
 // so these assignments hold regardless of how the bundler orders imports.
 // The scratch directory keeps the tests from ever touching a developer's
 // real upload directory. No test in this file touches the network.
-const SCRATCH = fs.mkdtempSync(path.join(os.tmpdir(), "atlas-storage-test-"));
+const SCRATCH = fs.mkdtempSync(path.join(os.tmpdir(), "maysoor-storage-test-"));
 process.env.STORAGE_LOCAL_DIR = SCRATCH;
 delete process.env.STORAGE_PROVIDER;
 delete process.env.SENTRY_DSN;

@@ -6,7 +6,7 @@ import { timingSafeStringEqual } from "../../../lib/timingSafeEqual";
 // Why this channel matters commercially (docs/27-telegram-setup.md): it is
 // the only channel a merchant can connect in minutes — a BotFather token,
 // no Meta business verification, no WABA, no per-message fee. It is how a
-// new signup proves Atlas works on their own traffic before committing to
+// new signup proves Maysoor works on their own traffic before committing to
 // the WhatsApp onboarding described in docs/22-whatsapp-store-onboarding-manual.md.
 // So it is a first-class adapter, held to the same isolation/security bar
 // as whatsapp.ts, not a demo path like mock.ts.
@@ -94,7 +94,7 @@ export function telegramBotIdFromToken(botToken: string): string {
  *
  * This is the ONLY thing standing between a store's inbox and anyone who
  * learns (or guesses) the webhook URL: without it, a stranger could POST a
- * hand-written Update and inject a message that Atlas would persist as a
+ * hand-written Update and inject a message that Maysoor would persist as a
  * real customer message, answer with the store's AI agent, and bill against
  * the org's AI reply quota. So verification here is mandatory, and it fails
  * closed — an account with no `webhookVerifyToken` configured rejects every

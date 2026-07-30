@@ -103,8 +103,10 @@ test("secret-token check accepts the configured token and rejects anything else"
 test("verifyTelegramSecretToken handles non-hex secrets without silently truncating them", () => {
   // Telegram allows A-Z a-z 0-9 _ - in secret_token. Comparing as hex would
   // decode "zz..." to an empty buffer and make unrelated secrets match.
-  assert.equal(verifyTelegramSecretToken("atlas_secret-XYZ", "atlas_secret-XYZ"), true);
-  assert.equal(verifyTelegramSecretToken("atlas_secret-XYZ", "atlas_secret-XYq"), false);
+  assert.equal(verifyTelegramSecretToken("maysoor_secret-XYZ", "maysoor_secret-XYZ"), true);
+  // Differs from the line above in exactly one character (Z vs q) — that is
+  // what makes this assert the comparison, and not just "two unlike strings".
+  assert.equal(verifyTelegramSecretToken("maysoor_secret-XYZ", "maysoor_secret-XYq"), false);
 });
 
 test("externalAccountId is the bot id — the digits before the colon in the BotFather token", () => {

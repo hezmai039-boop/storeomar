@@ -1,4 +1,4 @@
-// Provider price table + cost maths for every LLM call Atlas makes.
+// Provider price table + cost maths for every LLM call Maysoor makes.
 //
 // WHY MICRO-USD INTEGERS (and not floats, and not cents):
 // a single grounded reply is on the order of 900 input + 150 output tokens,

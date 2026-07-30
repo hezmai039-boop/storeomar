@@ -26,6 +26,11 @@ function rootDir(): string {
   // Read at call time, not module load: the registry imports this module on
   // every boot regardless of which provider is selected, and tests point
   // STORAGE_LOCAL_DIR at a scratch directory after import.
+  // "atlas-storage" is deliberately NOT renamed to match the Maysoor brand:
+  // it is the on-disk location of files that have already been written, and
+  // the keys stored in the database are relative to it. Pointing the default
+  // at a new directory orphans every existing upload — the rows still resolve,
+  // the reads just 404. A rename would have to move the files first.
   return process.env.STORAGE_LOCAL_DIR || path.join(os.tmpdir(), "atlas-storage");
 }
 

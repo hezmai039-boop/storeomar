@@ -13,6 +13,14 @@ import { getRedis, getRedisSubscriber } from "../../lib/redis";
 const bus = new EventEmitter();
 bus.setMaxListeners(0);
 
+// Kept as "atlas:" through the Maysoor rebrand ON PURPOSE — this is a wire
+// identifier, not a brand string. Both sides of a Redis pub/sub channel have
+// to name it identically, and a rolling deploy runs old and new instances at
+// the same time: renaming it puts them on two different channels, so every
+// event crossing that boundary is silently dropped (no error, just an inbox
+// that stops updating for half the users until the last old pod is gone).
+// Changing it safely means a two-release migration that publishes to both
+// names first — do not "finish the rebrand" here with a one-line edit.
 const CHANNEL = "atlas:realtime";
 
 export type RealtimeEvent =

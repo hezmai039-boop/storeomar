@@ -69,14 +69,42 @@ function periodEndFor(start: Date, interval: string): Date {
   return end;
 }
 
+/** Prefix every NEW invoice number carries: MYS-{YYYY}-{0001}. */
+const INVOICE_PREFIX = "MYS";
+
 /**
- * ATL-{YYYY}-{0001}, minted inside the caller's transaction.
+ * Prefixes this platform used to mint under, newest first. "ATL" is the
+ * pre-rebrand Atlas series.
+ *
+ * DO NOT DELETE THIS AND SIMPLIFY THE SCAN BELOW BACK TO ONE PREFIX. The
+ * sequence is per-YEAR, not per-prefix: rows written as ATL-2026-0006 and a
+ * fresh MYS-2026-0001 are both "invoice number 1..6 of 2026" to the customer,
+ * their accountant and the Saudi tax authority. If the max-sequence lookup
+ * only saw the current prefix, the first invoice minted after the rebrand
+ * would restart the counter at 0001 mid-year and the platform would issue two
+ * different documents that both claim to be the year's first invoice — a
+ * bookkeeping problem the unique index on invoices.number cannot catch,
+ * because MYS-2026-0001 and ATL-2026-0001 are genuinely different strings.
+ *
+ * This list can only be emptied once no invoice bearing a legacy prefix
+ * exists for the CURRENT year, i.e. at the earliest on 1 January of the year
+ * after the rebrand — and even then only if nobody backdates an invoice.
+ */
+const LEGACY_INVOICE_PREFIXES = ["ATL"];
+
+const ALL_INVOICE_PREFIXES = [INVOICE_PREFIX, ...LEGACY_INVOICE_PREFIXES];
+
+/**
+ * MYS-{YYYY}-{0001}, minted inside the caller's transaction.
  *
  * The advisory lock is the actual guarantee: READ COMMITTED lets two
  * concurrent subscribe requests both read the same max number and both try
- * to write ATL-2026-0007. The unique index on invoices.number would turn
+ * to write MYS-2026-0007. The unique index on invoices.number would turn
  * the loser into a 500 rather than a duplicate, but serialising on the
  * year makes the second request simply get ...0008.
+ *
+ * The sequence continues across the rebrand rather than restarting — see
+ * LEGACY_INVOICE_PREFIXES.
  */
 async function nextInvoiceNumber(tx: Prisma.TransactionClient, year: string): Promise<string> {
   // $executeRawUnsafe, NOT $queryRawUnsafe: pg_advisory_xact_lock() returns
@@ -84,17 +112,35 @@ async function nextInvoiceNumber(tx: Prisma.TransactionClient, year: string): Pr
   // JS value and fails with P2010 ("Failed to deserialize column of type
   // 'void'") — which surfaces as a 500 on every single subscribe. The
   // execute path just reports a row count, which is all a lock needs.
+  //
+  // Note the lock is keyed on the YEAR alone, not on the prefix, which is
+  // what lets one lock serialise a scan that spans several prefixes.
   await tx.$executeRawUnsafe("SELECT pg_advisory_xact_lock($1::bigint)", 81000000 + Number(year));
-  // Lexicographic max == numeric max only while the counter is zero-padded
-  // to the same width; revisit the padding before any single year issues a
-  // 10,000th invoice.
-  const last = await tx.invoice.findFirst({
-    where: { number: { startsWith: `ATL-${year}-` } },
-    orderBy: { number: "desc" },
-    select: { number: true },
-  });
-  const seq = last ? Number(last.number.slice(`ATL-${year}-`.length)) + 1 : 1;
-  return `ATL-${year}-${String(seq).padStart(4, "0")}`;
+
+  // One indexed lookup per prefix, then the numeric max across all of them.
+  // Two prefixes = two point queries, so this stays cheaper than pulling the
+  // year's rows and sorting in JS.
+  let maxSeq = 0;
+  for (const prefix of ALL_INVOICE_PREFIXES) {
+    const stem = `${prefix}-${year}-`;
+    // Lexicographic max == numeric max only while the counter is zero-padded
+    // to the same width; revisit the padding before any single year issues a
+    // 10,000th invoice. (Comparing ACROSS prefixes lexicographically would be
+    // wrong regardless — "ATL-…" sorts below "MYS-…" whatever the tail says —
+    // which is why each prefix is reduced to a number before the comparison.)
+    const last = await tx.invoice.findFirst({
+      where: { number: { startsWith: stem } },
+      orderBy: { number: "desc" },
+      select: { number: true },
+    });
+    if (!last) continue;
+    const seq = Number(last.number.slice(stem.length));
+    // A hand-written row ("ATL-2026-draft") must not poison the counter into
+    // NaN and take down every subsequent subscribe.
+    if (Number.isFinite(seq) && seq > maxSeq) maxSeq = seq;
+  }
+
+  return `${INVOICE_PREFIX}-${year}-${String(maxSeq + 1).padStart(4, "0")}`;
 }
 
 /**

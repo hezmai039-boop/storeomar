@@ -3,19 +3,45 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>Atlas — منصة إدارة المتاجر والقنوات والذكاء الاصطناعي</title>
+    <title>ميسور — خدمة العملاء الذكية</title>
 
     <!-- PWA / installable mobile app -->
     <link rel="manifest" href="/manifest.webmanifest" />
-    <meta name="theme-color" content="#7c3aed" />
-    <meta name="description" content="إدارة محادثات عملاء متجرك عبر واتساب وبقية القنوات مع مساعد ذكاء اصطناعي في تطبيق واحد." />
+    <meta name="theme-color" content="#0D2C4D" />
+    <meta name="description" content="ميسور توحّد واتساب وقنوات متجرك في صندوق وارد واحد، مع مساعد ذكاء اصطناعي يجيب عملاءك من معرفة متجرك على مدار الساعة." />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+
+    <!--
+      The two font files the FIRST screen actually needs, fetched in parallel
+      with the JS bundle instead of after it. Without these the browser only
+      learns the fonts exist once it has downloaded, parsed and executed the
+      bundle — so the Arabic paints in a system fallback and then reflows
+      when Tajawal lands.
+
+      Only 400 and 700: 500 and 800 appear below the fold, and preloading a
+      font the first screen does not use steals bandwidth from the request
+      that matters most. `crossorigin` is required even same-origin — font
+      requests are CORS-mode, and omitting it fetches each file twice.
+    -->
+    <link rel="preload" href="/fonts/tajawal-400-arabic.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/tajawal-700-arabic.woff2" as="font" type="font/woff2" crossorigin />
 
     <!-- iOS home-screen app support -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Atlas" />
+    <meta name="apple-mobile-web-app-title" content="ميسور" />
     <link rel="apple-touch-icon" href="/icon.svg" />
+
+    <!-- What a WhatsApp or X share of the site renders. Absolute URLs: a
+         relative one resolves against the crawler's own host, not ours. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="ميسور" />
+    <meta property="og:title" content="ميسور — خدمة العملاء الذكية" />
+    <meta property="og:description" content="متجرك يردّ على عملائه فورًا — حتى وأنت نائم." />
+    <meta property="og:url" content="https://maysoor.com/" />
+    <meta property="og:image" content="https://maysoor.com/icon.svg" />
+    <meta property="og:locale" content="ar_SA" />
+    <meta name="twitter:card" content="summary" />
   </head>
   <body>
     <div id="root"></div>

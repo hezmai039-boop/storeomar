@@ -49,7 +49,7 @@ export const env = {
   resendApiKey: process.env.RESEND_API_KEY,
   // Must be a domain verified with the provider, otherwise every send is
   // rejected. The default is only meaningful for the console adapter.
-  emailFrom: process.env.EMAIL_FROM ?? "Atlas <onboarding@atlas.sa>",
+  emailFrom: process.env.EMAIL_FROM ?? "ميسور <onboarding@maysoor.com>",
   // Base URL of the FRONTEND, used to build the links inside those emails.
   // Separate from corsOrigin even though they usually match: CORS is a
   // browser policy that may legitimately list several origins later, while

@@ -127,5 +127,5 @@ app.use(errorHandler);
 
 app.listen(env.port, () => {
   // eslint-disable-next-line no-console
-  console.log(`Atlas backend listening on :${env.port}`);
+  console.log(`Maysoor backend listening on :${env.port}`);
 });

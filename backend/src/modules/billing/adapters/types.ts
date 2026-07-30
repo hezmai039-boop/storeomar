@@ -27,7 +27,8 @@ export interface PaymentProvider {
   createCheckout(params: {
     invoiceId: string;
     /**
-     * Human-facing invoice number (ATL-2026-0001). Optional so the contract
+     * Human-facing invoice number (MYS-2026-0001; ATL-… on rows minted
+     * before the rebrand). Optional so the contract
      * stays satisfiable by a gateway that only needs the id, but offline
      * providers must prefer it: a customer types this into a bank transfer
      * note by hand, and a UUID is not something anyone can copy correctly
