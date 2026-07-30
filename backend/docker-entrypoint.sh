@@ -26,6 +26,13 @@ fi
 #
 # An existing database built by db push needs `npm run prisma:baseline` once,
 # by hand, before the first deploy that runs this.
+# Baselines a db-push-built database on its first migrated deploy, so that
+# migrate deploy below does not refuse a non-empty schema it has no history
+# for. No-op on a fresh database and on one that already has history — see
+# prisma/ensure-baseline.ts for why this is not a manual step.
+echo "Checking migration baseline..."
+npx tsx prisma/ensure-baseline.ts
+
 echo "Applying database migrations..."
 npx prisma migrate deploy
 
