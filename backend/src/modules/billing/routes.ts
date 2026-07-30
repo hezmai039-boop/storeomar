@@ -99,14 +99,16 @@ async function nextInvoiceNumber(tx: Prisma.TransactionClient, year: string): Pr
 
 /**
  * Postgres rejects a malformed uuid at the driver level, which Prisma
- * surfaces as an unhandled 500 — a guessed/typo'd invoice id should read as
- * "not found", like any other id that isn't the caller's.
+ * surfaces as an unhandled 500 — a guessed/typo'd id should read as "not
+ * found", like any other id that isn't the caller's.
  */
-function invoiceIdParam(raw: string): string {
+function uuidParam(raw: string, label: string): string {
   const parsed = z.string().uuid().safeParse(raw);
-  if (!parsed.success) throw ApiError.notFound("الفاتورة");
+  if (!parsed.success) throw ApiError.notFound(label);
   return parsed.data;
 }
+
+const invoiceIdParam = (raw: string) => uuidParam(raw, "الفاتورة");
 
 /**
  * Halalas are integers on purpose (SAR × 100) — floats lose money — so the
@@ -497,6 +499,280 @@ billingRouter.post(
 
     res.json({
       data: { invoice: invoiceView(result.invoice, invoice.plan.currency), subscription: result.subscription },
+    });
+  })
+);
+
+// ------------------------------------------------------------------
+// Landing-page plan requests (leads).
+//
+// Self-serve signup is closed, so the public form in
+// modules/billing/publicRoutes.ts is how a stranger reaches the platform.
+// Everything below is the other half: the owner's queue, and the one action
+// that turns a lead into a paying customer after money has changed hands
+// out of band.
+//
+// All of it is requirePlatformAdmin(). A lead carries a real person's name,
+// email and phone with no organization attached — there is no tenant to
+// scope it to, so the only correct audience is platform staff.
+// ------------------------------------------------------------------
+
+const planRequestListSchema = z.object({
+  status: z.enum(["new", "contacted", "activated", "rejected"]).optional(),
+});
+
+// GET /v1/billing/admin/plan-requests — newest first, open ones first.
+billingRouter.get(
+  "/admin/plan-requests",
+  requirePlatformAdmin(),
+  asyncHandler(async (req, res) => {
+    const query = planRequestListSchema.parse(req.query);
+    const requests = await prisma.planRequest.findMany({
+      where: query.status ? { status: query.status } : {},
+      include: {
+        plan: { select: { key: true, name: true, priceHalalas: true, currency: true, interval: true } },
+        organization: { select: { id: true, name: true, slug: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    });
+    // Two counters the UI needs for the badge — cheap, and computing them
+    // client-side would be wrong the moment `take: 200` truncates.
+    const openCount = await prisma.planRequest.count({ where: { status: "new" } });
+    res.json({ data: requests, meta: { openCount } });
+  })
+);
+
+const planRequestUpdateSchema = z.object({
+  status: z.enum(["new", "contacted", "rejected"]),
+  note: z.string().trim().max(2000).optional(),
+});
+
+/**
+ * PATCH /v1/billing/admin/plan-requests/:id — move a lead through the queue.
+ *
+ * "activated" is deliberately NOT accepted here. That status means a plan
+ * was granted, and granting is the activate-plan route below, which writes
+ * an invoice and a subscription in one transaction. Letting this endpoint
+ * set it would create leads marked as customers with nothing behind them.
+ */
+billingRouter.patch(
+  "/admin/plan-requests/:id",
+  requirePlatformAdmin(),
+  asyncHandler(async (req, res) => {
+    const body = planRequestUpdateSchema.parse(req.body);
+    const id = uuidParam(req.params.id, "الطلب");
+    const existing = await prisma.planRequest.findUnique({ where: { id } });
+    if (!existing) throw ApiError.notFound("الطلب");
+    if (existing.status === "activated") throw ApiError.conflict("هذا الطلب مُفعَّل بالفعل");
+
+    const updated = await prisma.planRequest.update({
+      where: { id },
+      data: {
+        status: body.status,
+        handleNote: body.note ?? existing.handleNote,
+        handledBy: req.auth!.userId,
+        handledAt: new Date(),
+      },
+      include: { plan: { select: { key: true, name: true } } },
+    });
+    res.json({ data: updated });
+  })
+);
+
+/**
+ * GET /v1/billing/admin/organizations — the picker for activate-plan.
+ *
+ * Platform staff only, and it is the one place in the API that lists tenants
+ * across the isolation boundary. Kept to the columns that identify an
+ * organization plus its current plan; no store, user, or conversation data
+ * crosses this route.
+ */
+billingRouter.get(
+  "/admin/organizations",
+  requirePlatformAdmin(),
+  asyncHandler(async (_req, res) => {
+    const organizations = await prisma.organization.findMany({
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        status: true,
+        createdAt: true,
+        subscription: {
+          select: {
+            status: true,
+            currentPeriodEnd: true,
+            plan: { select: { key: true, name: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 500,
+    });
+    res.json({ data: organizations });
+  })
+);
+
+const activatePlanSchema = z.object({
+  planKey: z.string().min(1),
+  // How many billing intervals the payment covers. 1..24 rather than
+  // unbounded: this route grants service for free from the database's point
+  // of view, and a typo'd 999 would hand out 83 years of it.
+  periods: z.number().int().min(1).max(24).default(1),
+  // What was ACTUALLY collected, in halalas, when it differs from the list
+  // price — a negotiated discount, a partial first payment, a launch offer.
+  // Optional; the plan's price × periods is the default. Stored on the
+  // invoice, so the discount stays visible in the record rather than living
+  // only in a WhatsApp thread.
+  amountHalalas: z.number().int().min(0).max(100_000_000).optional(),
+  // How the money arrived. Free text because it is a human note about a
+  // human transaction ("تحويل بنكي 12/07"، "نقدًا")، not a machine field.
+  paymentNote: z.string().trim().max(500).optional(),
+  planRequestId: z.string().uuid().optional(),
+});
+
+/**
+ * POST /v1/billing/admin/organizations/:organizationId/activate-plan
+ *
+ * The owner-side counterpart to the whole manual-payment flow: money was
+ * agreed and received outside the platform, and this is the single action
+ * that turns that into entitlement.
+ *
+ * It writes a PAID invoice as well as activating the subscription, rather
+ * than just flipping the subscription. Three reasons, and they are the whole
+ * design:
+ *
+ *   1. A subscription that became active with no invoice behind it is
+ *      indistinguishable from the free-upgrade exploit that POST /subscribe
+ *      was fixed for. Every activation on this platform must leave a
+ *      financial record.
+ *   2. The customer's own /billing page lists invoices. Activating without
+ *      one shows them a plan they cannot account for.
+ *   3. It is the only durable answer to "what did this customer pay, and
+ *      when" once the WhatsApp thread is gone.
+ *
+ * Both halves in ONE transaction, for the same reason approve does: an
+ * invoice marked paid without the subscription extended is a customer who
+ * paid and stayed locked out; the reverse is free service.
+ */
+billingRouter.post(
+  "/admin/organizations/:organizationId/activate-plan",
+  requirePlatformAdmin(),
+  asyncHandler(async (req, res) => {
+    const body = activatePlanSchema.parse(req.body);
+    const organizationId = uuidParam(req.params.organizationId, "المؤسسة");
+    const reviewerId = req.auth!.userId;
+
+    const organization = await prisma.organization.findUnique({ where: { id: organizationId } });
+    if (!organization) throw ApiError.notFound("المؤسسة");
+
+    const plan = await prisma.plan.findUnique({ where: { key: body.planKey } });
+    if (!plan || !plan.isActive) throw ApiError.notFound("الباقة");
+
+    const planRequest = body.planRequestId
+      ? await prisma.planRequest.findUnique({ where: { id: body.planRequestId } })
+      : null;
+    if (body.planRequestId && !planRequest) throw ApiError.notFound("الطلب");
+
+    const now = new Date();
+
+    // Same rule as approve: extend from the end of what is already paid for,
+    // never from today, so activating early doesn't delete the remainder.
+    const existingSub = await prisma.subscription.findUnique({ where: { organizationId } });
+    const periodStart = existingSub && existingSub.currentPeriodEnd > now ? existingSub.currentPeriodEnd : now;
+    let periodEnd = periodStart;
+    for (let i = 0; i < body.periods; i += 1) periodEnd = periodEndFor(periodEnd, plan.interval);
+
+    const subtotalHalalas = body.amountHalalas ?? plan.priceHalalas * body.periods;
+    const vatHalalas = Math.round((subtotalHalalas * vatPercent()) / 100);
+
+    const result = await prisma.$transaction(async (tx) => {
+      const number = await nextInvoiceNumber(tx, currentPeriod(now).slice(0, 4));
+      const invoice = await tx.invoice.create({
+        data: {
+          organizationId,
+          planId: plan.id,
+          number,
+          // Paid on creation — the money is already in the account; this
+          // route exists precisely because the transfer happened elsewhere.
+          status: "paid",
+          provider: "manual",
+          subtotalHalalas,
+          vatHalalas,
+          totalHalalas: subtotalHalalas + vatHalalas,
+          periodStart,
+          periodEnd,
+          transferRef: body.paymentNote ?? null,
+          reviewedBy: reviewerId,
+          reviewedAt: now,
+          paidAt: now,
+          reviewNote: body.paymentNote ?? null,
+        },
+      });
+
+      const subscription = await tx.subscription.upsert({
+        where: { organizationId },
+        create: {
+          organizationId,
+          planId: plan.id,
+          status: "active",
+          provider: "manual",
+          currentPeriodStart: periodStart,
+          currentPeriodEnd: periodEnd,
+        },
+        update: {
+          planId: plan.id,
+          status: "active",
+          currentPeriodStart: periodStart,
+          currentPeriodEnd: periodEnd,
+          canceledAt: null,
+        },
+        include: { plan: true },
+      });
+
+      if (planRequest) {
+        await tx.planRequest.update({
+          where: { id: planRequest.id },
+          data: {
+            status: "activated",
+            organizationId,
+            handledBy: reviewerId,
+            handledAt: now,
+            handleNote: body.paymentNote ?? planRequest.handleNote,
+          },
+        });
+      }
+
+      await writeAudit(tx, {
+        organizationId,
+        storeId: null,
+        actorUserId: reviewerId,
+        action: "billing.plan_activated_manually",
+        entityType: "subscription",
+        entityId: subscription.id,
+        before: existingSub
+          ? { planId: existingSub.planId, status: existingSub.status, currentPeriodEnd: existingSub.currentPeriodEnd.toISOString() }
+          : undefined,
+        after: {
+          planKey: plan.key,
+          periods: body.periods,
+          invoiceNumber: invoice.number,
+          totalHalalas: invoice.totalHalalas,
+          currentPeriodEnd: periodEnd.toISOString(),
+          planRequestId: planRequest?.id ?? null,
+        },
+        ip: req.ip,
+      });
+
+      return { invoice, subscription };
+    });
+
+    res.status(201).json({
+      data: {
+        invoice: invoiceView(result.invoice, plan.currency),
+        subscription: result.subscription,
+      },
     });
   })
 );

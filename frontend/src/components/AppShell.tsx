@@ -3,7 +3,7 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useStore } from "../context/StoreContext";
 import { api } from "../api/client";
-import type { KnowledgeSuggestion } from "../api/types";
+import type { KnowledgeSuggestion, PlanRequest } from "../api/types";
 import { usePermissions, PERMISSIONS } from "../lib/permissions";
 import "./AppShell.css";
 
@@ -15,6 +15,7 @@ export function AppShell() {
   const { can } = usePermissions();
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  const [leadCount, setLeadCount] = useState(0);
   const navigate = useNavigate();
 
   // Polling, not the backend's SSE /realtime endpoint — that route requires
@@ -44,6 +45,36 @@ export function AppShell() {
       clearInterval(interval);
     };
   }, [activeStore]);
+
+  // Landing-page plan requests, for platform staff only. With self-serve
+  // signup closed this IS the inbound channel — a lead that sits unseen
+  // until someone happens to open /billing is a customer who went
+  // elsewhere — so it gets the same standing attention cue the knowledge
+  // queue has.
+  //
+  // 403 is the expected answer for every ordinary customer and is swallowed
+  // silently: not being platform staff is not an error, it just means no
+  // badge. The endpoint's `meta.openCount` is used rather than the array
+  // length because the list is capped at 200 rows.
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      api
+        .get<{ data: PlanRequest[]; meta: { openCount: number } }>("/v1/billing/admin/plan-requests?status=new")
+        .then((resp) => {
+          if (!cancelled) setLeadCount(resp.meta?.openCount ?? resp.data.length);
+        })
+        .catch(() => {
+          if (!cancelled) setLeadCount(0);
+        });
+    };
+    load();
+    const interval = setInterval(load, PENDING_REVIEW_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
 
   if (!me) return null;
 
@@ -196,6 +227,11 @@ export function AppShell() {
               <li>
                 <NavLink to="/billing" className={({ isActive }) => (isActive ? "is-active" : "")}>
                   <span className="ic">◈</span> الاشتراك والفوترة
+                  {leadCount > 0 && (
+                    <span className="nav-badge" title={`${leadCount} طلب باقة جديد`}>
+                      {leadCount}
+                    </span>
+                  )}
                 </NavLink>
               </li>
             </ul>

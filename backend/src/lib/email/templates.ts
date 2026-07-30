@@ -138,3 +138,96 @@ export function passwordResetEmail(params: { name: string; link: string }): Rend
     ].join("\n"),
   };
 }
+
+/** The dashboard page where the owner acts on a lead. */
+export function planRequestsLink(): string {
+  return `${env.appUrl.replace(/\/+$/, "")}/billing`;
+}
+
+/**
+ * Sent to the PLATFORM OWNER when a visitor asks for a plan on the landing
+ * page. Not a customer-facing message — it is the notification that replaces
+ * self-serve signup while SIGNUP_ENABLED is off.
+ *
+ * Every field here is attacker-controlled: the endpoint behind it is public
+ * and unauthenticated. They go through the same escapeHtml() as everything
+ * else, and the recipient is the one account that can activate plans, so the
+ * phishing consequence of getting that wrong is the worst on the platform.
+ * The `text` part carries the same values unescaped, which is correct — it
+ * is never parsed as markup.
+ */
+export function planRequestNotificationEmail(params: {
+  planName: string;
+  name: string;
+  email: string;
+  phone: string;
+  storeName?: string | null;
+  note?: string | null;
+  link: string;
+}): Rendered {
+  const paragraphs = [
+    `طلب جديد على باقة «${params.planName}» من صفحة الهبوط.`,
+    `الاسم: ${params.name}`,
+    `البريد: ${params.email}`,
+    `الجوال: ${params.phone}`,
+    ...(params.storeName ? [`المتجر: ${params.storeName}`] : []),
+    ...(params.note ? [`ملاحظة العميل: ${params.note}`] : []),
+    "تواصل معه للاتفاق على الدفع، ثم فعّل الباقة له من لوحة الفوترة.",
+  ];
+  return {
+    subject: `طلب باقة جديد — ${params.planName} (${params.name})`,
+    html: layout({
+      heading: "طلب باقة جديد",
+      paragraphs,
+      buttonLabel: "فتح لوحة الفوترة",
+      link: params.link,
+      footer: `هذه رسالة داخلية من منصة ${BRAND} إلى مالك المنصة، وليست رسالة للعميل.`,
+    }),
+    text: [
+      `طلب جديد على باقة «${params.planName}» من صفحة الهبوط.`,
+      "",
+      `الاسم: ${params.name}`,
+      `البريد: ${params.email}`,
+      `الجوال: ${params.phone}`,
+      ...(params.storeName ? [`المتجر: ${params.storeName}`] : []),
+      ...(params.note ? [`ملاحظة العميل: ${params.note}`] : []),
+      "",
+      "افتح لوحة الفوترة للتواصل والتفعيل:",
+      params.link,
+    ].join("\n"),
+  };
+}
+
+/**
+ * The acknowledgement the visitor gets. Deliberately contains NO link that
+ * grants anything and no account details — nothing exists yet. Its only job
+ * is to stop the person wondering whether the form worked.
+ *
+ * Sent to an address nobody verified, so it must stay useless to an attacker
+ * who submits the form with someone else's email: worst case that person
+ * receives one "we got your request" note, which is why it names no plan
+ * price, no reference number, and offers no action.
+ */
+export function planRequestAckEmail(params: { name: string; planName: string }): Rendered {
+  const paragraphs = [
+    `مرحبًا ${params.name}، وصلنا طلبك على باقة «${params.planName}».`,
+    "سيتواصل معك فريق المنصة قريبًا للاتفاق على طريقة الدفع وتفعيل حسابك.",
+  ];
+  return {
+    subject: `استلمنا طلبك — منصة ${BRAND}`,
+    html: layout({
+      heading: "استلمنا طلبك",
+      paragraphs,
+      buttonLabel: `زيارة ${BRAND}`,
+      link: env.appUrl.replace(/\/+$/, ""),
+      footer: `إذا لم تطلب هذا، تجاهل الرسالة — لم يُنشأ لك أي حساب ولم يُسجَّل عليك أي مبلغ.`,
+    }),
+    text: [
+      `مرحبًا ${params.name}،`,
+      "",
+      `وصلنا طلبك على باقة «${params.planName}». سيتواصل معك فريق المنصة قريبًا للاتفاق على الدفع والتفعيل.`,
+      "",
+      "إذا لم تطلب هذا، تجاهل الرسالة — لم يُنشأ لك أي حساب ولم يُسجَّل عليك أي مبلغ.",
+    ].join("\n"),
+  };
+}

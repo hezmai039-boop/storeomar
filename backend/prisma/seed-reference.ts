@@ -83,6 +83,13 @@ for (const def of channelTypeDefs) {
 // Upserted by `key` so re-running the seed (docker-entrypoint.sh runs it on
 // every deploy) never duplicates a plan or resets a live customer's price.
 // Prices are HALALAS (SAR × 100); null quota = unlimited, never 0.
+//
+// `features` holds ONLY what the quota columns cannot express. It used to
+// restate them ("3 متاجر", "2000 رد ذكي شهريًا") as well, and both surfaces
+// that render a plan — the billing page and now the public landing page —
+// list the derived quotas *and* this array, so every plan showed each limit
+// twice. The columns are the single source of truth for a number; this array
+// is the marketing copy beside them.
 const planDefs = [
   {
     key: "free",
@@ -93,7 +100,7 @@ const planDefs = [
     maxUsers: 2,
     maxAiRepliesMonthly: 100,
     sortOrder: 1,
-    features: ["متجر واحد", "مستخدمان", "100 رد ذكي شهريًا", "قناة واتساب واحدة"],
+    features: ["قناة واتساب واحدة", "قاعدة معرفة لمتجرك"],
   },
   {
     key: "basic",
@@ -104,7 +111,7 @@ const planDefs = [
     maxUsers: 5,
     maxAiRepliesMonthly: 2000,
     sortOrder: 2,
-    features: ["3 متاجر", "5 مستخدمين", "2000 رد ذكي شهريًا", "جميع القنوات", "التقارير الأساسية"],
+    features: ["جميع القنوات", "التقارير الأساسية", "روابط محاكاة للتجربة"],
   },
   {
     key: "pro",
@@ -115,7 +122,7 @@ const planDefs = [
     maxUsers: null,
     maxAiRepliesMonthly: 20000,
     sortOrder: 3,
-    features: ["متاجر بلا حد", "مستخدمون بلا حد", "20000 رد ذكي شهريًا", "ذكاء الأعمال", "دعم مخصص"],
+    features: ["ذكاء الأعمال المتقدّم", "ربط سلة وزد", "دعم مخصص وأولوية في الرد"],
   },
 ];
 const planByKey = new Map<string, { id: string }>();

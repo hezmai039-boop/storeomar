@@ -1,5 +1,9 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { api } from "../api/client";
+import type { PublicPlan } from "../api/types";
+import { PlanRequestDialog } from "./PlanRequestDialog";
 import "./LandingPage.css";
 
 // The store owner / sales contact the "اطلب متجرك" buttons open — the real
@@ -28,9 +32,40 @@ const STATS = [
   { n: "٢٤/٧", l: "لا ينام ولا يغيب" },
 ];
 
+// Prices arrive as integer halalas (SAR × 100). Latin numerals because the
+// rest of the page's figures are, and because a price is copied into a bank
+// transfer.
+const SAR = new Intl.NumberFormat("ar-SA-u-nu-latn", { maximumFractionDigits: 0 });
+
+/** null = unlimited on every quota field. Never render it as 0. */
+function limitText(limit: number | null, unit: string): string {
+  return limit === null ? `${unit} بلا حد` : `${SAR.format(limit)} ${unit}`;
+}
+
 export function LandingPage() {
   const { me } = useAuth();
   const dashboardHref = me ? (me.isOwner ? "/overview" : "/inbox") : "/login";
+
+  // The catalogue comes from the API, not a constant in this file: the whole
+  // point of putting plans on the landing page is that the page and the
+  // billing screen quote the same numbers. A hard-coded price here is a
+  // price that goes stale the first time one is changed in the database.
+  const [plans, setPlans] = useState<PublicPlan[] | null>(null);
+  const [requested, setRequested] = useState<PublicPlan | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    api
+      .get<{ data: PublicPlan[] }>("/v1/public/plans")
+      // An empty array on failure, not an error banner: this is a marketing
+      // page, and a backend hiccup should cost the pricing section, not the
+      // whole page. The WhatsApp contact button below still works.
+      .then((resp) => alive && setPlans(resp.data))
+      .catch(() => alive && setPlans([]));
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   return (
     <div className="lp">
@@ -105,6 +140,62 @@ export function LandingPage() {
           ))}
         </div>
       </section>
+
+      {/* Pricing sits after "how it works" and before the stats band: the
+          visitor has just been told what they get and in how many steps,
+          which is the moment a price stops reading as a barrier. Rendered
+          only once the catalogue actually loaded — an empty pricing section
+          is worse than none. */}
+      {plans && plans.length > 0 && (
+        <section className="lp-section" id="plans">
+          <h2>باقات تناسب متجرك</h2>
+          <p className="lead">
+            اختر باقتك واترك بياناتك — نتواصل معك للاتفاق على طريقة الدفع ونفعّل حسابك. لا حاجة لبطاقة، ولا يُخصم منك
+            شيء الآن.
+          </p>
+          <div className="lp-plans">
+            {plans.map((p) => {
+              // The middle plan of three, by position rather than by key:
+              // "recommend the one in the middle" survives renaming or
+              // repricing the tiers, while `key === "basic"` silently
+              // highlights nothing the day that key changes.
+              const featured = plans.length === 3 && p.sortOrder === plans[1].sortOrder;
+              const free = p.priceHalalas === 0;
+              return (
+                <div key={p.key} className={`lp-plan${featured ? " is-featured" : ""}`}>
+                  {featured && <span className="tag">الأكثر طلبًا</span>}
+                  <h3>{p.name}</h3>
+                  <div className="price">
+                    <span className="n">{free ? "مجانًا" : SAR.format(p.priceHalalas / 100)}</span>
+                    {!free && (
+                      <span className="per">
+                        ريال / {p.interval === "yearly" ? "سنويًا" : "شهريًا"}
+                      </span>
+                    )}
+                  </div>
+                  <ul>
+                    <li>{limitText(p.maxAiRepliesMonthly, "رد ذكي شهريًا")}</li>
+                    <li>{limitText(p.maxStores, "متجر")}</li>
+                    <li>{limitText(p.maxUsers, "مستخدم")}</li>
+                    {p.features.map((f) => (
+                      <li key={f}>{f}</li>
+                    ))}
+                  </ul>
+                  <button
+                    type="button"
+                    className={`lp-btn ${featured ? "lp-btn-gold" : "lp-btn-ghost"}`}
+                    onClick={() => setRequested(p)}
+                  >
+                    اطلب باقة {p.name}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      <PlanRequestDialog plan={requested} onClose={() => setRequested(null)} />
 
       <div className="lp-stats">
         {STATS.map((s) => (

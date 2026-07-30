@@ -2,11 +2,14 @@ import { CSSProperties, FormEvent, useCallback, useEffect, useState } from "reac
 import { api, ApiClientError } from "../api/client";
 import type {
   AdminInvoice,
+  AdminOrganization,
   BillingOverview,
   CheckoutInstruction,
   Invoice,
   InvoiceStatus,
   Plan,
+  PlanRequest,
+  PlanRequestStatus,
   SubscribeResult,
   SubscriptionStatus,
 } from "../api/types";
@@ -49,6 +52,25 @@ const INVOICE_STATUS: Record<InvoiceStatus, { label: string; badge: string }> = 
   void: { label: "ملغاة", badge: "badge-neutral" },
 };
 
+const PLAN_REQUEST_STATUS: Record<PlanRequestStatus, { label: string; badge: string }> = {
+  new: { label: "جديد", badge: "badge-warn" },
+  contacted: { label: "تم التواصل", badge: "badge-info" },
+  activated: { label: "مُفعَّل", badge: "badge-good" },
+  rejected: { label: "مرفوض", badge: "badge-neutral" },
+};
+
+/**
+ * wa.me wants the number in international format with no +, which is exactly
+ * how the backend normalises it. Falls back to whatever was typed if it
+ * could not be normalised — a link that opens the wrong chat is still more
+ * useful than no link, because the number is visible next to it either way.
+ */
+function whatsappHref(phone: string, planName: string): string {
+  const digits = phone.replace(/\D/g, "");
+  const text = `مرحبًا، بخصوص طلبك لباقة «${planName}» في منصة Atlas`;
+  return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
+}
+
 const TH: CSSProperties = {
   textAlign: "right",
   fontSize: 11.5,
@@ -87,6 +109,15 @@ export function BillingPage() {
   const [isStaff, setIsStaff] = useState(false);
   const [adminError, setAdminError] = useState<string | null>(null);
 
+  // Landing-page leads + the organization picker that activating one needs.
+  const [planRequests, setPlanRequests] = useState<PlanRequest[] | null>(null);
+  const [organizations, setOrganizations] = useState<AdminOrganization[] | null>(null);
+  // Which lead's activation form is open, and what it holds. One at a time:
+  // activating grants paid service, and two half-filled forms on screen is
+  // how the wrong organization gets a plan.
+  const [activateFor, setActivateFor] = useState<string | null>(null);
+  const [activateForm, setActivateForm] = useState({ organizationId: "", planKey: "", periods: "1", amountSar: "", paymentNote: "" });
+
   const reload = useCallback(async () => {
     setLoading(true);
     try {
@@ -115,16 +146,26 @@ export function BillingPage() {
   // it silently hides the section rather than surfacing an error.
   const reloadAdmin = useCallback(async () => {
     try {
+      // One request decides staff membership, and the rest follow only if it
+      // succeeded — firing all four in parallel would produce three more
+      // 403s in the console for every ordinary customer who opens this page.
       const resp = await api.get<{ data: AdminInvoice[] }>("/v1/billing/admin/invoices?status=awaiting_review");
       setAdminInvoices(resp.data);
       setIsStaff(true);
       setAdminError(null);
+
+      const [requests, orgs] = await Promise.all([
+        api.get<{ data: PlanRequest[] }>("/v1/billing/admin/plan-requests"),
+        api.get<{ data: AdminOrganization[] }>("/v1/billing/admin/organizations"),
+      ]);
+      setPlanRequests(requests.data);
+      setOrganizations(orgs.data);
     } catch (err) {
       if (err instanceof ApiClientError && err.status === 403) {
         setIsStaff(false);
         return;
       }
-      setAdminError(err instanceof ApiClientError ? err.message : "تعذّر تحميل الفواتير قيد المراجعة");
+      setAdminError(err instanceof ApiClientError ? err.message : "تعذّر تحميل بيانات المراجعة");
     }
   }, []);
 
@@ -200,6 +241,81 @@ export function BillingPage() {
       setBusy(null);
     }
   }
+
+  async function setRequestStatus(request: PlanRequest, status: "contacted" | "rejected") {
+    let note: string | undefined;
+    if (status === "rejected") {
+      const answer = window.prompt(`سبب رفض طلب «${request.name}»؟ (داخلي — لا يظهر للعميل)`);
+      if (answer === null) return;
+      note = answer.trim() || undefined;
+    }
+    setBusy(`req:${request.id}`);
+    setAdminError(null);
+    try {
+      await api.patch(`/v1/billing/admin/plan-requests/${request.id}`, { status, ...(note ? { note } : {}) });
+      await reloadAdmin();
+    } catch (err) {
+      setAdminError(err instanceof ApiClientError ? err.message : "تعذّر تحديث الطلب");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function openActivate(request: PlanRequest) {
+    if (activateFor === request.id) {
+      setActivateFor(null);
+      return;
+    }
+    setActivateFor(request.id);
+    setActivateForm({
+      // Pre-select the organization the lead is already linked to, if any;
+      // otherwise the owner must pick one deliberately. Never guessed by
+      // name match — activating the wrong tenant gives a stranger a paid
+      // plan and takes it from the customer who paid.
+      organizationId: request.organizationId ?? "",
+      planKey: request.planKey,
+      periods: "1",
+      amountSar: "",
+      paymentNote: "",
+    });
+  }
+
+  async function activatePlan(e: FormEvent, request: PlanRequest) {
+    e.preventDefault();
+    if (!activateForm.organizationId) {
+      setAdminError("اختر المؤسسة التي ستُفعَّل لها الباقة");
+      return;
+    }
+    setBusy(`activate:${request.id}`);
+    setAdminError(null);
+    try {
+      // SAR in the form, halalas on the wire — Math.round, not a bare
+      // multiply: 79.9 * 100 is 7989.999999999999 in binary floating point,
+      // and the backend takes an integer.
+      const amount = activateForm.amountSar.trim();
+      await api.post(`/v1/billing/admin/organizations/${activateForm.organizationId}/activate-plan`, {
+        planKey: activateForm.planKey,
+        periods: Number(activateForm.periods) || 1,
+        ...(amount ? { amountHalalas: Math.round(Number(amount) * 100) } : {}),
+        ...(activateForm.paymentNote.trim() ? { paymentNote: activateForm.paymentNote.trim() } : {}),
+        planRequestId: request.id,
+      });
+      setActivateFor(null);
+      await reloadAdmin();
+      // The activated organization may be this owner's own, so the header
+      // above can now be stale.
+      await reload();
+    } catch (err) {
+      setAdminError(err instanceof ApiClientError ? err.message : "تعذّر تفعيل الباقة");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // From the loaded list rather than the response's meta.openCount: the two
+  // agree, and reading it here keeps the badge consistent with the rows
+  // actually on screen after a local status change.
+  const openPlanRequests = planRequests?.filter((r) => r.status === "new").length ?? 0;
 
   const usage = overview?.usage ?? null;
   const currentPlan = overview?.plan ?? null;
@@ -563,7 +679,178 @@ export function BillingPage() {
         )}
       </section>
 
-      {/* ---------- 4. platform staff review ---------- */}
+      {/* ---------- 4. platform staff: landing-page leads ---------- */}
+      {/* Above the transfer queue on purpose: a lead is a customer who has
+          not paid yet and will go elsewhere if nobody calls, while an
+          invoice awaiting review is money already sent that can wait an
+          hour. Ordered by urgency, not by when the feature was built. */}
+      {isStaff && (
+        <section style={{ marginBottom: 30 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
+            <h2 style={{ fontSize: 16, margin: 0 }}>طلبات الباقات</h2>
+            {openPlanRequests > 0 && <span className="badge badge-warn">{openPlanRequests} جديد</span>}
+          </div>
+          <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>
+            طلبات وصلت من صفحة الهبوط. تواصل مع صاحب الطلب، اتفق معه على الدفع، ثم فعّل له الباقة على مؤسسته من هنا.
+          </p>
+
+          {planRequests && planRequests.length === 0 ? (
+            <div style={{ color: "var(--text-dim)", fontSize: 13 }}>لا طلبات بعد.</div>
+          ) : (
+            planRequests && (
+              <div style={{ display: "grid", gap: 12 }}>
+                {planRequests.map((r) => {
+                  const meta = PLAN_REQUEST_STATUS[r.status];
+                  const planName = r.plan?.name ?? r.planKey;
+                  const isOpen = activateFor === r.id;
+                  return (
+                    <div key={r.id} className="card" style={{ padding: "14px 16px" }}>
+                      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
+                        <div style={{ flex: 1, minWidth: 240 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                            <b style={{ fontSize: 14.5 }}>{r.name}</b>
+                            <span className={`badge ${meta.badge}`}>{meta.label}</span>
+                            <span style={{ fontSize: 12, color: "var(--text-dim)" }}>يطلب: {planName}</span>
+                          </div>
+                          <div style={{ marginTop: 6, display: "flex", gap: 14, flexWrap: "wrap", fontSize: 12.5, color: "var(--text-dim)" }}>
+                            <a className="mono" dir="ltr" href={`mailto:${r.email}`}>
+                              {r.email}
+                            </a>
+                            <a className="mono" dir="ltr" href={whatsappHref(r.phone, planName)} target="_blank" rel="noopener noreferrer">
+                              {r.phone} ↗
+                            </a>
+                            <span className="mono">{formatDate(r.createdAt)}</span>
+                          </div>
+                          {r.storeName && (
+                            <div style={{ marginTop: 4, fontSize: 12.5, color: "var(--text-dim)" }}>المتجر: {r.storeName}</div>
+                          )}
+                          {r.note && (
+                            <div style={{ marginTop: 6, fontSize: 12.5, lineHeight: 1.8, maxWidth: 560 }}>«{r.note}»</div>
+                          )}
+                          {r.organization && (
+                            <div style={{ marginTop: 6, fontSize: 12, color: "var(--text-faint)" }}>
+                              مرتبط بمؤسسة: {r.organization.name}
+                            </div>
+                          )}
+                          {r.handleNote && (
+                            <div style={{ marginTop: 6, fontSize: 12, color: "var(--text-faint)" }}>ملاحظتك: {r.handleNote}</div>
+                          )}
+                        </div>
+
+                        {/* An activated lead is done — its buttons would only
+                            offer ways to double-charge or contradict the
+                            record. */}
+                        {r.status !== "activated" && (
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            {r.status === "new" && (
+                              <button className="btn btn-ghost btn-sm" disabled={busy !== null} onClick={() => setRequestStatus(r, "contacted")}>
+                                {busy === `req:${r.id}` ? "جارٍ…" : "تم التواصل"}
+                              </button>
+                            )}
+                            <button className="btn btn-primary btn-sm" disabled={busy !== null} onClick={() => openActivate(r)}>
+                              {isOpen ? "إلغاء" : "تفعيل الباقة"}
+                            </button>
+                            <button className="btn btn-danger btn-sm" disabled={busy !== null} onClick={() => setRequestStatus(r, "rejected")}>
+                              رفض
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {isOpen && (
+                        <form
+                          onSubmit={(e) => activatePlan(e, r)}
+                          style={{
+                            marginTop: 14,
+                            paddingTop: 14,
+                            borderTop: "1px solid var(--border)",
+                            display: "flex",
+                            gap: 10,
+                            flexWrap: "wrap",
+                            alignItems: "flex-end",
+                          }}
+                        >
+                          <label style={{ ...fieldStyle(), minWidth: 220 }}>
+                            المؤسسة
+                            <select
+                              value={activateForm.organizationId}
+                              onChange={(e) => setActivateForm((f) => ({ ...f, organizationId: e.target.value }))}
+                              required
+                            >
+                              <option value="">— اختر —</option>
+                              {organizations?.map((o) => (
+                                <option key={o.id} value={o.id}>
+                                  {o.name} {o.subscription ? `(${o.subscription.plan.name})` : "(بلا باقة)"}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label style={fieldStyle()}>
+                            الباقة
+                            <select
+                              value={activateForm.planKey}
+                              onChange={(e) => setActivateForm((f) => ({ ...f, planKey: e.target.value }))}
+                              required
+                            >
+                              {plans?.map((p) => (
+                                <option key={p.key} value={p.key}>
+                                  {p.name} — {formatSar(p.priceHalalas)}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label style={{ ...fieldStyle(), minWidth: 110, flex: "0 0 110px" }}>
+                            عدد الدورات
+                            <input
+                              type="number"
+                              min={1}
+                              max={24}
+                              className="mono"
+                              value={activateForm.periods}
+                              onChange={(e) => setActivateForm((f) => ({ ...f, periods: e.target.value }))}
+                              required
+                            />
+                          </label>
+                          <label style={{ ...fieldStyle(), minWidth: 150 }}>
+                            المبلغ المستلم (ر.س)
+                            <input
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              dir="ltr"
+                              className="mono"
+                              placeholder="سعر الباقة"
+                              value={activateForm.amountSar}
+                              onChange={(e) => setActivateForm((f) => ({ ...f, amountSar: e.target.value }))}
+                            />
+                          </label>
+                          <label style={{ ...fieldStyle(), minWidth: 200 }}>
+                            ملاحظة الدفع
+                            <input
+                              placeholder="تحويل بنكي — الراجحي"
+                              value={activateForm.paymentNote}
+                              onChange={(e) => setActivateForm((f) => ({ ...f, paymentNote: e.target.value }))}
+                            />
+                          </label>
+                          <button className="btn btn-good btn-sm" type="submit" disabled={busy !== null}>
+                            {busy === `activate:${r.id}` ? "جارٍ التفعيل…" : "تفعيل وإصدار فاتورة مدفوعة"}
+                          </button>
+                          <p style={{ flexBasis: "100%", margin: 0, fontSize: 11.5, color: "var(--text-faint)", lineHeight: 1.8 }}>
+                            سيصدر هذا فاتورة <b>مدفوعة</b> بالمبلغ أعلاه ويمدّد اشتراك المؤسسة — نفّذه بعد وصول المبلغ فعلًا.
+                            المدة تُضاف إلى نهاية الدورة الحالية، فلا يضيع ما تبقّى للعميل.
+                          </p>
+                        </form>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )
+          )}
+        </section>
+      )}
+
+      {/* ---------- 5. platform staff review ---------- */}
       {isStaff && (
         <section>
           <h2 style={{ fontSize: 16, margin: "0 0 4px" }}>مراجعة الحوالات</h2>
