@@ -37,9 +37,15 @@ SEARCH_PATHS=(frontend/src frontend/public frontend/index.html backend/src backe
 fail=0
 
 echo "── الاسم القديم في أسطح مرئية ─────────────────────────────"
+# docs/32-brand.md is exempt as a whole file, not line by line: it is the
+# record OF the rebrand, so it has to be able to name the retired brand
+# plainly — including a section headed "ما بقي باسم أطلس" and a table of
+# every old→new identifier. Making it satisfy a prose filter would mean
+# writing that section in circumlocutions, which is worse documentation.
 hits=$(grep -rniE 'atlas|أطلس' "${SEARCH_PATHS[@]}" 2>/dev/null \
   | grep -vE "$ALLOW" \
-  | grep -v 'node_modules' || true)
+  | grep -v 'node_modules' \
+  | grep -v '^docs/32-brand\.md:' || true)
 if [ -n "$hits" ]; then
   echo "$hits"
   fail=1

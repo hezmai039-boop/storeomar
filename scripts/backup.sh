@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# نسخة احتياطية من قاعدة بيانات أطلس.
+# نسخة احتياطية من قاعدة بيانات ميسور.
 #
 # الاستخدام:
 #   ./scripts/backup.sh                          # يستخدم $DATABASE_URL
@@ -28,7 +28,10 @@ BACKUP_DIR="${BACKUP_DIR:-./backups}"
 mkdir -p "$BACKUP_DIR"
 
 STAMP="$(date +%Y-%m-%d_%H%M%S)"
-OUT="$BACKUP_DIR/atlas-$STAMP.dump"
+# بادئة الاسم أصبحت maysoor- بعد إعادة التسمية. هذا يخصّ النسخ الجديدة فقط؛
+# الملفات القديمة باسم atlas-*.dump تبقى صالحة تمامًا، و restore-to-staging.sh
+# يقبلها كما هي — لا شيء في السكربتين يفحص بادئة اسم الملف.
+OUT="$BACKUP_DIR/maysoor-$STAMP.dump"
 
 echo "جارٍ أخذ النسخة الاحتياطية…"
 pg_dump "$DB_URL" --format=custom --no-owner --no-privileges --file="$OUT"

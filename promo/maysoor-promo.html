@@ -1,77 +1,102 @@
-<title>أطلس — برج تحكّم متجرك</title>
+<title>ميسور — خدمة العملاء الذكية</title>
 <style>
+  /* ميسور — صفحة ترويجية مستقلة (ملف واحد، بلا أي أصل خارجي).
+   *
+   * الألوان من لوحة العلامة، لا مخترعة: الكحلي #0D2C4D بنية، والبرتقالي
+   * #FF6A00 لون تمييز واحد، والأزرق #1E5A8A تفاعل. راجع docs/32-brand.md.
+   *
+   * ⚠️ قاعدة التباين: #FF6A00 يقيس 2.87:1 على الأبيض ويسقط في WCAG AA.
+   * لذلك البرتقالي هنا مفصول إلى رمزين:
+   *   --signal      تعبئة فقط (أزرار، حدود، نقاط) — يحمل نصًا كحليًا
+   *   --signal-text البرتقالي حين يكون نصًا (#B84400 على فاتح = 5.43:1)
+   * لا تستعمل --signal كلون نص، ولا --signal-text كتعبئة.
+   *
+   * الخطوط: هذا الملف مستقل بذاته ولا يجلب أي أصل خارجي عمدًا (يُفتح من
+   * القرص، ويُرسَل بالبريد، ويعمل بلا شبكة). لذلك Tajawal وInter مطلوبان
+   * هنا بالاسم فقط — يُستعملان إن كانا مثبّتين على الجهاز، وإلا فالتسلسل
+   * الاحتياطي النظامي. النسخة المستضافة ذاتيًا من الخطين تخصّ التطبيق
+   * نفسه تحت frontend/public/fonts/ — راجع docs/32-brand.md.
+   */
   @font-face {
-    font-family: "AtlasMono";
+    font-family: "MaysoorMono";
     src: local("Cascadia Code"), local("SF Mono"), local("Consolas");
   }
 
   :root {
-    --ink: #0A0E1A;
-    --panel: #121826;
-    --panel-2: #161E2E;
-    --line: rgba(233, 236, 244, 0.09);
-    --line-strong: rgba(233, 236, 244, 0.16);
-    --signal: #E8A33D;
-    --signal-dim: rgba(232, 163, 61, 0.14);
-    --pulse: #4FD8BE;
-    --pulse-dim: rgba(79, 216, 190, 0.14);
-    --paper: #EEF0F5;
-    --slate: #8D96AC;
-    --slate-dim: #5B637A;
+    --ink: #071A2E;
+    --panel: #0D2C4D;
+    --panel-2: #0F3054;
+    --line: rgba(230, 236, 242, 0.09);
+    --line-strong: rgba(230, 236, 242, 0.16);
+    --signal: #FF6A00;
+    --signal-text: #FF9A5C;
+    --signal-ink: #0D2C4D;
+    --signal-dim: rgba(255, 106, 0, 0.14);
+    --pulse: #5C9ED1;
+    --pulse-dim: rgba(92, 158, 209, 0.14);
+    --paper: #EAF1F8;
+    --slate: #A8C0D6;
+    --slate-dim: #7593B0;
 
-    --font-arabic: "Dubai", "Segoe UI", Tahoma, "Noto Sans Arabic", sans-serif;
-    --font-mono: "AtlasMono", "SF Mono", "Cascadia Code", Consolas, monospace;
+    --font-arabic: "Tajawal", "Inter", "Segoe UI", Tahoma, "Noto Sans Arabic", sans-serif;
+    --font-mono: "MaysoorMono", "SF Mono", "Cascadia Code", Consolas, monospace;
 
     color-scheme: dark;
   }
 
   @media (prefers-color-scheme: light) {
     :root {
-      --ink: #F4F5F8;
+      --ink: #F4F7FA;
       --panel: #FFFFFF;
-      --panel-2: #ECEEF3;
-      --line: rgba(10, 14, 26, 0.09);
-      --line-strong: rgba(10, 14, 26, 0.18);
-      --signal: #C97D1F;
-      --signal-dim: rgba(201, 125, 31, 0.12);
-      --pulse: #12876F;
-      --pulse-dim: rgba(18, 135, 111, 0.12);
-      --paper: #10141F;
-      --slate: #5B6478;
-      --slate-dim: #8A93A8;
+      --panel-2: #E6ECF2;
+      --line: rgba(13, 44, 77, 0.09);
+      --line-strong: rgba(13, 44, 77, 0.18);
+      --signal: #FF6A00;
+      --signal-text: #B84400;
+      --signal-ink: #0D2C4D;
+      --signal-dim: rgba(255, 106, 0, 0.12);
+      --pulse: #1E5A8A;
+      --pulse-dim: rgba(30, 90, 138, 0.12);
+      --paper: #0D2C4D;
+      --slate: #4A6480;
+      --slate-dim: #8399AE;
       color-scheme: light;
     }
   }
 
   :root[data-theme="dark"] {
-    --ink: #0A0E1A;
-    --panel: #121826;
-    --panel-2: #161E2E;
-    --line: rgba(233, 236, 244, 0.09);
-    --line-strong: rgba(233, 236, 244, 0.16);
-    --signal: #E8A33D;
-    --signal-dim: rgba(232, 163, 61, 0.14);
-    --pulse: #4FD8BE;
-    --pulse-dim: rgba(79, 216, 190, 0.14);
-    --paper: #EEF0F5;
-    --slate: #8D96AC;
-    --slate-dim: #5B637A;
+    --ink: #071A2E;
+    --panel: #0D2C4D;
+    --panel-2: #0F3054;
+    --line: rgba(230, 236, 242, 0.09);
+    --line-strong: rgba(230, 236, 242, 0.16);
+    --signal: #FF6A00;
+    --signal-text: #FF9A5C;
+    --signal-ink: #0D2C4D;
+    --signal-dim: rgba(255, 106, 0, 0.14);
+    --pulse: #5C9ED1;
+    --pulse-dim: rgba(92, 158, 209, 0.14);
+    --paper: #EAF1F8;
+    --slate: #A8C0D6;
+    --slate-dim: #7593B0;
     color-scheme: dark;
   }
 
   :root[data-theme="light"] {
-    --ink: #F4F5F8;
+    --ink: #F4F7FA;
     --panel: #FFFFFF;
-    --panel-2: #ECEEF3;
-    --line: rgba(10, 14, 26, 0.09);
-    --line-strong: rgba(10, 14, 26, 0.18);
-    --signal: #C97D1F;
-    --signal-dim: rgba(201, 125, 31, 0.12);
-    --pulse: #12876F;
-    --pulse-dim: rgba(18, 135, 111, 0.12);
-    --paper: #10141F;
-    --slate: #5B6478;
-    --slate-dim: #8A93A8;
+    --panel-2: #E6ECF2;
+    --line: rgba(13, 44, 77, 0.09);
+    --line-strong: rgba(13, 44, 77, 0.18);
+    --signal: #FF6A00;
+    --signal-text: #B84400;
+    --signal-ink: #0D2C4D;
+    --signal-dim: rgba(255, 106, 0, 0.12);
+    --pulse: #1E5A8A;
+    --pulse-dim: rgba(30, 90, 138, 0.12);
+    --paper: #0D2C4D;
+    --slate: #4A6480;
+    --slate-dim: #8399AE;
     color-scheme: light;
   }
 
@@ -97,7 +122,8 @@
     font-family: var(--font-mono);
     font-size: 0.72rem;
     letter-spacing: 0.14em;
-    color: var(--signal);
+    /* نص، لا تعبئة — لذلك المتغيّر المعتّم لا البرتقالي الخام. */
+    color: var(--signal-text);
     text-transform: uppercase;
     display: inline-flex;
     align-items: center;
@@ -196,9 +222,11 @@
 
   .btn:focus-visible { outline: 2px solid var(--pulse); outline-offset: 3px; }
 
+  /* زر التحويل. نص كحلي على برتقالي (4.93:1) — وليس أبيض إطلاقًا، فالأبيض
+     على #FF6A00 يقيس 2.87:1 ويسقط في WCAG AA. لا "تصلحه" إلى أبيض. */
   .btn-signal {
     background: var(--signal);
-    color: #1A1104;
+    color: var(--signal-ink);
   }
   .btn-signal:hover { transform: translateY(-1px); box-shadow: 0 8px 24px -8px var(--signal); }
 
@@ -223,6 +251,10 @@
     white-space: nowrap;
     transform: translate(-50%, -50%);
   }
+  /* لون النص يأتي من --ink، وهو يتقلّب مع الوضع تلقائيًا (فاتح على أزرق
+     داكن في الوضع الفاتح، وكحلي داكن على أزرق فاتح في الداكن). كان هنا
+     تجاوز مكسور: محدِّد موصول بفاصلة إلى @media، وهو غير صالح ولم يكن
+     يُطبَّق أصلًا — حُذف لأن الرمز صار يكفي. */
   .node-label.hub {
     color: var(--ink);
     background: var(--pulse);
@@ -230,10 +262,6 @@
     font-weight: 700;
     font-size: 0.78rem;
     padding: 0.5rem 0.9rem;
-  }
-  :root[data-theme="light"] .node-label.hub,
-  @media (prefers-color-scheme: light) {
-    .node-label.hub { color: #05221C; }
   }
 
   /* ---------- STAT STRIP ---------- */
@@ -397,7 +425,8 @@
     margin-bottom: 0.55rem;
   }
   .status-tag.ok { color: var(--pulse); border: 1px solid var(--pulse); }
-  .status-tag.warn { color: var(--signal); border: 1px solid var(--signal); }
+  /* اللون كنص من --signal-text، والحد من البرتقالي الخام. */
+  .status-tag.warn { color: var(--signal-text); border: 1px solid var(--signal); }
 
   .ticket-card {
     align-self: flex-end;
@@ -405,7 +434,7 @@
     padding: 0.7rem 1rem;
     font-family: var(--font-mono);
     font-size: 0.76rem;
-    color: var(--signal);
+    color: var(--signal-text);
   }
 
   .demo-empty { color: var(--slate-dim); font-size: 0.9rem; margin: auto; text-align: center; }
@@ -487,10 +516,10 @@
     <canvas id="radar" aria-hidden="true"></canvas>
     <div class="wrap hero-inner">
       <div class="hero-copy">
-        <span class="eyebrow">ATLAS · STORE OPS CONTROL TOWER</span>
-        <h1>قنواتك الأربع.<br>ذكاء واحد.<br><em>برج تحكّم واحد.</em></h1>
+        <span class="eyebrow">MAYSOOR · SMART CUSTOMER SERVICE</span>
+        <h1>قنواتك الأربع.<br>ذكاء واحد.<br><em>خدمة عملاء ميسورة.</em></h1>
         <p class="lede">
-          أطلس يوحّد واتساب وإنستغرام وماسنجر وتيك توك في صندوق وارد واحد،
+          ميسور يوحّد واتساب وإنستغرام وماسنجر وتيك توك في صندوق وارد واحد،
           بوكيل ذكاء اصطناعي مستقل لكل متجر يجيب من بياناتك الحقيقية —
           ويعرف بالضبط متى يتوقف ويُحوّل لموظف.
         </p>
@@ -548,7 +577,7 @@
           <span class="section-num">02 / بوابة الثقة</span>
           <h2>يجيب بثقة، أو يُحوّل بلا تردد</h2>
         </div>
-        <p>جرّب بنفسك — اختر سؤالاً وشاهد كيف يقرر أطلس بين الرد الفوري والتصعيد لموظف.</p>
+        <p>جرّب بنفسك — اختر سؤالاً وشاهد كيف يقرر ميسور بين الرد الفوري والتصعيد لموظف.</p>
       </div>
       <div class="demo-grid hud-card" id="demo-anchor">
         <div class="demo-questions" role="group" aria-label="أسئلة تجريبية">
@@ -557,7 +586,7 @@
           <button class="demo-q-btn" data-demo="edge" aria-pressed="false">أبي أرجّع منتج تعبته من شهرين</button>
         </div>
         <div class="demo-stage" id="demo-stage">
-          <p class="demo-empty">اختر سؤالاً من القائمة لمشاهدة قرار أطلس</p>
+          <p class="demo-empty">اختر سؤالاً من القائمة لمشاهدة قرار ميسور</p>
         </div>
       </div>
     </div>
@@ -583,7 +612,7 @@
   <section class="closing">
     <div class="wrap">
       <span class="eyebrow" style="justify-content:center;">جاهز الآن — لا مفهوم، بل منتج يعمل</span>
-      <h2>أطلس. كل قنواتك، بذكاء واحد.</h2>
+      <h2>ميسور. كل قنواتك، بذكاء واحد.</h2>
       <p>منصة تعمل فعليًا اليوم — Backend وFrontend وقاعدة بيانات حقيقية، مبنية من اليوم الأول لتتحوّل إلى SaaS.</p>
       <div class="cta-row">
         <a class="btn btn-signal" href="#channels">استكشف المنصة</a>
@@ -591,7 +620,7 @@
     </div>
   </section>
 
-  <footer>ATLAS — STORE OPS CONTROL TOWER</footer>
+  <footer>MAYSOOR — SMART CUSTOMER SERVICE</footer>
 </div>
 
 <script>
@@ -656,7 +685,7 @@
       hubEl.className = "node-label hub";
       hubEl.style.left = hub.x + "px";
       hubEl.style.top = hub.y + "px";
-      hubEl.textContent = "أطلس";
+      hubEl.textContent = "ميسور";
       labelsHost.appendChild(hubEl);
 
       if (reduceMotion) drawStatic();
@@ -696,8 +725,8 @@
 
       var style = getComputedStyle(document.documentElement);
       var lineColor = style.getPropertyValue("--line-strong").trim() || "rgba(255,255,255,0.15)";
-      var pulseColor = style.getPropertyValue("--pulse").trim() || "#4FD8BE";
-      var signalColor = style.getPropertyValue("--signal").trim() || "#E8A33D";
+      var pulseColor = style.getPropertyValue("--pulse").trim() || "#5C9ED1";
+      var signalColor = style.getPropertyValue("--signal").trim() || "#FF6A00";
 
       ctx.strokeStyle = lineColor;
       ctx.lineWidth = 1;

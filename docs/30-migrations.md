@@ -31,13 +31,17 @@ prisma/migrations/0_init/migration.sql    ← 941 سطرًا · 39 جدولًا
 
 الحل: أخبر Prisma أن خط الأساس مطبَّق فعلًا — **بلا لمس أي جدول**:
 
+> النسخ الاحتياطية صارت تُسمّى `maysoor-*.dump` بعد إعادة التسمية. إن كنت
+> تحتفظ بملفات أقدم باسم `atlas-*.dump` فهي صالحة كما هي، و
+> `restore-to-staging.sh` يقبلها بلا إعادة تسمية.
+
 ```bash
 # 1) نسخة احتياطية أولًا. غير قابل للتفاوض.
 ./scripts/backup.sh "$DATABASE_URL"
-./scripts/restore-to-staging.sh ./backups/atlas-<...>.dump
+./scripts/restore-to-staging.sh ./backups/maysoor-<...>.dump
 
 # 2) جرّبها على النسخة المستعادة أولًا
-export DATABASE_URL="postgresql://.../atlas_staging"
+export DATABASE_URL="postgresql://.../maysoor_staging"
 npm run prisma:baseline
 npm run prisma:migrate     # يجب أن يقول: No pending migrations
 

@@ -5,7 +5,7 @@
 
 حاليًا، ربط كل متجر بواتساب يتم **يدويًا** من طرفك (System User، Access
 Token، إلخ) — هذا لا يتوسّع لعشرات أو مئات المتاجر. الحل الوحيد الذي توفّره
-Meta لمنصات SaaS مثل Atlas هو:
+Meta لمنصات SaaS مثل ميسور هو:
 
 **Meta Tech Provider Program + Embedded Signup** — يسمح لأي متجر جديد بربط
 رقم واتساب الخاص به عبر نافذة منبثقة رسمية من Meta داخل تطبيقك (بدون تدخل
@@ -21,17 +21,17 @@ Meta لمنصات SaaS مثل Atlas هو:
 | المتطلب | الحالة |
 |---|---|
 | رابط عام لسياسة الخصوصية (Privacy Policy URL) | ✅ جاهز — انشر `docs/20-privacy-policy-terms.md` على صفحة عامة في موقعك |
-| شعار المنصة (Atlas) بصيغة PNG مربعة | ⏳ جهّزه |
+| شعار المنصة (ميسور) بصيغة PNG مربعة | ⏳ جهّزه |
 | وصف مختصر للمنصة بالإنجليزية (لواجهة Meta) | ✅ يمكن استخدام الوصف أدناه |
 | حساب Meta Business Manager موثّق (Business Verification) | ⏳ يتطلب أوراق تجارية (سجل تجاري، إلخ) |
-| موقع فعلي لمنصة Atlas (حتى لو صفحة تعريفية بسيطة) | ⏳ جهّزه إن لم يوجد |
+| موقع فعلي لمنصة ميسور (حتى لو صفحة تعريفية بسيطة) | ⏳ جهّزه إن لم يوجد |
 
 **وصف مقترح بالإنجليزية للاستخدام في نموذج Meta:**
 
-> Atlas is a multi-tenant customer service platform that lets merchants
+> ميسور is a multi-tenant customer service platform that lets merchants
 > connect their WhatsApp Business number to manage customer conversations
 > in one inbox, with an AI agent grounded in each merchant's own knowledge
-> base. Atlas acts as a Tech Provider enabling merchants to onboard their
+> base. ميسور acts as a Tech Provider enabling merchants to onboard their
 > own WhatsApp Business Accounts via Embedded Signup.
 
 ---
@@ -82,7 +82,7 @@ Meta لمنصات SaaS مثل Atlas هو:
 | `business_management` | للوصول لأصول Business Manager الخاصة بكل متجر عميل |
 
 لكل إذن، ستطلب Meta:
-- **فيديو شاشة (Screencast)** يوضح تدفق الاستخدام الفعلي داخل Atlas (مثال:
+- **فيديو شاشة (Screencast)** يوضح تدفق الاستخدام الفعلي داخل ميسور (مثال:
   متجر جديد يفتح صفحة "ربط واتساب" → نافذة Meta المنبثقة → الربط ينجح →
   رسالة تصل فعليًا في صندوق الوارد). هذا هو الجزء الذي يستغرق أطول وقت
   تحضير من جانبنا، وننصح بتسجيله بعد إنجاز الخطوة 5 (كود Embedded Signup)
@@ -92,7 +92,7 @@ Meta لمنصات SaaS مثل Atlas هو:
 **الزمن المتوقع لمراجعة Meta بعد التقديم: أيام إلى أسبوعين تقريبًا.** هذا
 خارج عن سيطرتنا بالكامل — يمكن تتبّع الحالة من نفس صفحة App Review.
 
-### الخطوة 5 — (تعمل بالتوازي) بناء كود Embedded Signup في Atlas
+### الخطوة 5 — (تعمل بالتوازي) بناء كود Embedded Signup في ميسور
 
 لا داعي لانتظار موافقة Meta لبدء هذا — الكود يُبنى وتُختبر تدفق الواجهة
 حتى بدون موافقة نهائية (Meta تسمح بالاختبار في وضع التطوير قبل الموافقة).
@@ -108,7 +108,7 @@ Meta لمنصات SaaS مثل Atlas هو:
 | 2. طلب Tech Provider | أنت (نموذج Meta) — سأرشدك حقل بحقل | ⏳ لم تبدأ |
 | 3. تفعيل Embedded Signup على التطبيق | أنت (نقرة واحدة في Meta) | ⏳ لم تبدأ |
 | 4. تقديم App Review | أنت + أنا (نص الشرح والفيديو) | ⏳ يتطلب إكمال 1-3 أولًا |
-| 5. كود Embedded Signup في Atlas | أنا (Backend + Frontend) | ⏳ جاهز للبدء الآن، لا يحتاج انتظار |
+| 5. كود Embedded Signup في ميسور | أنا (Backend + Frontend) | ⏳ جاهز للبدء الآن، لا يحتاج انتظار |
 
 **الخطوة العملية التالية الأسرع:** انشر `docs/20-privacy-policy-terms.md`
 على رابط عام في موقعك (حتى صفحة بسيطة كافية)، وابدأ الخطوة 1 (توثيق العمل
