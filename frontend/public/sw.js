@@ -26,7 +26,7 @@
  * immediately with matching HTML+CSS+JS. Correctness over offline caching —
  * the right trade-off for an app still shipping daily.
  */
-const CACHE_VERSION = "maysoor-static-v3";
+const CACHE_VERSION = "maysoor-static-v4";
 const OFFLINE_URL = "/offline.html";
 // Only self-contained, rarely-changing files — never the hashed app bundles
 // and never index.html. The fonts qualify: they are immutable files at fixed
@@ -36,6 +36,12 @@ const PRECACHE_URLS = [
   OFFLINE_URL,
   "/manifest.webmanifest",
   "/icon.svg",
+  // The PNGs the home-screen icon actually resolves to. Precached for the
+  // same reason as the manifest: an installed app that cannot fetch its own
+  // icon shows a blank tile.
+  "/icon-192.png",
+  "/icon-512.png",
+  "/icon-180.png",
   "/fonts/tajawal-400-arabic.woff2",
   "/fonts/tajawal-700-arabic.woff2",
 ];
