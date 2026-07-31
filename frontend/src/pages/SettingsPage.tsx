@@ -89,6 +89,7 @@ export function SettingsPage() {
   const { activeStore } = useStore();
   const { refreshMe } = useAuth();
   const [channels, setChannels] = useState<ChannelAccount[]>([]);
+  const [togglingChannelAi, setTogglingChannelAi] = useState<string | null>(null);
   const [integrations, setIntegrations] = useState<Integration[]>([]);
 
   const [storeName, setStoreName] = useState("");
@@ -226,6 +227,30 @@ export function SettingsPage() {
     }
   }
 
+  /**
+   * The per-CHANNEL switch — level 2 of 3 (store → channel → conversation).
+   *
+   * "Connected" and "answered automatically" are separate decisions, and
+   * merchants genuinely want them separate: bot on Instagram and Telegram, a
+   * human on WhatsApp because that is where the high-intent buyers are.
+   * Without this the only way to say that is to leave WhatsApp disconnected,
+   * which also gives up the unified inbox.
+   */
+  async function toggleChannelAi(channel: ChannelAccount) {
+    if (!activeStore) return;
+    const next = !channel.aiEnabled;
+    setTogglingChannelAi(channel.id);
+    try {
+      const resp = await api.patch<{ data: ChannelAccount }>(
+        `/v1/stores/${activeStore.id}/channel-accounts/${channel.id}/ai`,
+        { aiEnabled: next }
+      );
+      setChannels((list) => list.map((c) => (c.id === channel.id ? { ...c, aiEnabled: resp.data.aiEnabled } : c)));
+    } finally {
+      setTogglingChannelAi(null);
+    }
+  }
+
   async function diagnoseChannel(channel: ChannelAccount) {
     setDiagnosingId(channel.id);
     setDiagnoseError(null);
@@ -355,9 +380,35 @@ export function SettingsPage() {
                 <BrandTile brand={c.channelType.key} />
                 <span style={{ fontWeight: 700, fontSize: 13.5 }}>{c.displayName}</span>
               </div>
-              <span className={`badge ${c.status === "connected" ? "badge-good" : "badge-critical"}`}>
-                {CHANNEL_STATUS_AR[c.status] ?? c.status}
-              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <span className={`badge ${c.status === "connected" ? "badge-good" : "badge-critical"}`}>
+                  {CHANNEL_STATUS_AR[c.status] ?? c.status}
+                </span>
+                {/* Two different facts, deliberately two badges: `status` is
+                    "can we send on this channel", aiEnabled is "should we
+                    answer automatically". Merging them would make a merchant
+                    who silenced the bot think the channel had broken. */}
+                <span className={`badge ${c.aiEnabled ? "badge-info" : "badge-neutral"}`}>
+                  {c.aiEnabled ? "الرد الآلي مفعّل" : "رد بشري فقط"}
+                </span>
+              </div>
+              <button
+                className={`btn btn-sm ${c.aiEnabled ? "btn-ghost" : "btn-good"}`}
+                style={{ marginTop: 10 }}
+                disabled={togglingChannelAi === c.id}
+                onClick={() => toggleChannelAi(c)}
+                title={
+                  c.aiEnabled
+                    ? "توقف الردود الآلية على هذه القناة وحدها — تصل الرسائل للصندوق ليرد عليها موظف"
+                    : "يعود الرد الآلي على هذه القناة"
+                }
+              >
+                {togglingChannelAi === c.id
+                  ? "جارٍ…"
+                  : c.aiEnabled
+                    ? "إيقاف الرد الآلي على هذه القناة"
+                    : "تفعيل الرد الآلي على هذه القناة"}
+              </button>
               {/* The recorded cause, in Arabic. A red badge that cannot say
                   WHY is what sent the owner back to guessing. */}
               {(() => {

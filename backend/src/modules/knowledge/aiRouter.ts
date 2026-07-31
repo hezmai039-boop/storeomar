@@ -38,6 +38,12 @@ export function mapOrchestratorResultToPipelineResult(
 
 export interface AiReplyContext {
   mode: "classic" | "advanced" | "paused" | "quota_exceeded";
+  // Which of the three levels stopped the reply, when mode is "paused".
+  // The caller shows a different thing for each — a store-wide pause is a
+  // deliberate setting, a conversation takeover means a colleague is
+  // already typing — so collapsing them into one "paused" would make the
+  // inbox unable to explain itself.
+  pausedAt?: "store" | "channel" | "conversation";
   classic?: AiContext;
   advanced?: OrchestratorContext;
   // Carried from the gather phase so completeAiReply can meter the reply
@@ -55,6 +61,10 @@ export interface AiReplyContext {
 
 export interface GatherAiReplyParams {
   storeId: string;
+  // Needed to read the channel-level switch. Optional so the simulation
+  // path — which has no real channel account behind it — keeps compiling
+  // and keeps behaving as it does today.
+  channelAccountId?: string;
   storeName: string;
   question: string;
   conversationId: string;
@@ -90,7 +100,35 @@ export async function gatherAiReply(tx: Prisma.TransactionClient, params: Gather
   const agent = await tx.aiAgent.findUnique({ where: { storeId: params.storeId } });
 
   if (agent?.status === "paused") {
-    return { mode: "paused" };
+    return { mode: "paused", pausedAt: "store" };
+  }
+
+  // Level 2 and 3, checked in the same place and for the same reason as
+  // level 1: BEFORE retrieval, before the quota lookup, before any LLM call.
+  // A merchant who silenced the bot on this channel, or a colleague who took
+  // over this one conversation, must cost the platform nothing per inbound
+  // message — and must never be overridden by a reply that was already in
+  // flight through a cheaper check order.
+  //
+  // Narrowest wins. The three are deliberately independent rather than a
+  // single tri-state: turning the bot back on for a store must not silently
+  // resume it inside a conversation a human is still handling.
+  if (params.channelAccountId) {
+    const channel = await tx.channelAccount.findUnique({
+      where: { id: params.channelAccountId },
+      select: { aiEnabled: true },
+    });
+    if (channel && !channel.aiEnabled) {
+      return { mode: "paused", pausedAt: "channel" };
+    }
+  }
+
+  const conversation = await tx.conversation.findUnique({
+    where: { id: params.conversationId },
+    select: { aiPaused: true },
+  });
+  if (conversation?.aiPaused) {
+    return { mode: "paused", pausedAt: "conversation" };
   }
 
   // Plan quota is checked HERE — before either engine touches retrieval or

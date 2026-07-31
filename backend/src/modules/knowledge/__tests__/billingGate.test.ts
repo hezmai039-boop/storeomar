@@ -59,13 +59,22 @@ function router() {
 
 const PARAMS = { storeName: "متجر تجريبي", question: "متى يصل طلبي؟" };
 
-// A minimal fake transaction client. gatherAiReply only reads ai_agents
-// before the quota decision; knowledgeChunk is what the classic path's
-// retrieval reaches for afterwards, stubbed empty so the outcome is
+// A minimal fake transaction client. gatherAiReply reads ai_agents,
+// channel_accounts and conversations before the quota decision — the three
+// reply-control switches (docs/34) — and knowledgeChunk is what the classic
+// path's retrieval reaches for afterwards, stubbed empty so the outcome is
 // deterministic and no database is involved.
+//
+// channelAccount and conversation return the "open" values, because this
+// file is about the QUOTA gate: any other value would short-circuit before
+// the quota is ever consulted and every assertion below would pass for the
+// wrong reason. replyControl.test.ts is where the switches themselves are
+// exercised.
 function fakeTx(agent: Record<string, unknown> | null): Prisma.TransactionClient {
   return {
     aiAgent: { findUnique: async () => agent },
+    channelAccount: { findUnique: async () => ({ aiEnabled: true }) },
+    conversation: { findUnique: async () => ({ aiPaused: false }) },
     knowledgeChunk: { findMany: async () => [] },
   } as unknown as Prisma.TransactionClient;
 }

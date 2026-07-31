@@ -42,6 +42,10 @@ export interface Conversation {
   id: string;
   status: string;
   aiConfidenceLevel: string | null;
+  // Human takeover for this one customer. The narrowest of the three
+  // reply-control levels (docs/34) — store, channel, conversation.
+  aiPaused: boolean;
+  aiPausedAt: string | null;
   lastMessageAt: string | null;
   customer: Customer;
   channelAccount: { id: string; displayName: string; channelType: ChannelTypeRef };
@@ -86,6 +90,9 @@ export interface ChannelAccount {
   id: string;
   displayName: string;
   status: string;
+  // Whether the AI answers on this channel. Separate from `status`:
+  // `connected` is "we can send", this is "we should reply automatically".
+  aiEnabled: boolean;
   channelType: ChannelTypeRef;
   // Why the channel is not working, encoded as `[reason] عربي` by the
   // backend (channelHealth.ts). Never Meta's raw body.

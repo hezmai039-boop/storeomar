@@ -264,6 +264,112 @@ channelsRouter.patch(
   })
 );
 
+const aiEnabledSchema = z.object({ aiEnabled: z.boolean() });
+
+/**
+ * PATCH /v1/stores/:storeId/channel-accounts/:id/ai — the per-CHANNEL switch.
+ *
+ * "Connect this channel" and "let the AI answer on it" are separate
+ * decisions, and merchants really do want them separate: route Instagram and
+ * Telegram to the bot, keep a human on WhatsApp because that is where the
+ * high-intent buyers are. Without this the only way to express that is to
+ * leave the channel disconnected — which also gives up the unified inbox, so
+ * they connect nothing at all.
+ *
+ * CHANNELS_MANAGE, not AI_MANAGE: this is a property of the channel, and the
+ * person who wires up channels is the person who decides how each is
+ * answered. Audited, because "why did the bot stop answering WhatsApp" is a
+ * question someone will ask a week later.
+ */
+channelsRouter.patch(
+  "/channel-accounts/:id/ai",
+  requirePermission(PERMISSIONS.CHANNELS_MANAGE),
+  asyncHandler(async (req, res) => {
+    const body = aiEnabledSchema.parse(req.body);
+    const updated = await withStoreContext(req.storeAccess!.accessibleStoreIds, async (tx) => {
+      const account = await tx.channelAccount.findFirstOrThrow({
+        where: { id: req.params.id, storeId: req.storeAccess!.storeId },
+      });
+      const result = await tx.channelAccount.update({
+        where: { id: account.id },
+        data: { aiEnabled: body.aiEnabled },
+      });
+      await writeAudit(tx, {
+        organizationId: req.auth!.organizationId,
+        storeId: req.storeAccess!.storeId,
+        actorUserId: req.auth!.userId,
+        action: body.aiEnabled ? "channel.ai_enabled" : "channel.ai_disabled",
+        entityType: "channel_account",
+        entityId: account.id,
+        before: { aiEnabled: account.aiEnabled },
+        after: { aiEnabled: result.aiEnabled },
+        ip: req.ip,
+      });
+      return result;
+    });
+    const { credentialsEncrypted, ...safe } = updated;
+    res.json({ data: safe });
+  })
+);
+
+const conversationAiSchema = z.object({ aiPaused: z.boolean() });
+
+/**
+ * PATCH /v1/stores/:storeId/conversations/:id/ai — human takeover for ONE
+ * customer.
+ *
+ * The narrowest of the three levels and the one that matters most in
+ * practice. When the AI says something wrong to a single customer, the
+ * instinct is to rescue THAT conversation — not to switch the bot off for
+ * every other customer mid-conversation, which is what a store-wide kill
+ * switch forces.
+ *
+ * CONVERSATIONS_REPLY rather than a management permission: the agent already
+ * typing the correction is exactly the person who needs to silence the bot,
+ * and making them find a manager first is how the customer gets two
+ * contradictory answers.
+ *
+ * Takes effect on the NEXT inbound message — see gatherAiReply, which reads
+ * this before any retrieval or LLM call. A reply already in flight for a
+ * message received a second ago still lands; nothing can recall it, and
+ * pretending otherwise in the UI would be a lie.
+ */
+channelsRouter.patch(
+  "/conversations/:id/ai",
+  requirePermission(PERMISSIONS.CONVERSATIONS_REPLY),
+  asyncHandler(async (req, res) => {
+    const body = conversationAiSchema.parse(req.body);
+    const updated = await withStoreContext(req.storeAccess!.accessibleStoreIds, async (tx) => {
+      const conversation = await tx.conversation.findFirstOrThrow({
+        where: { id: req.params.id, storeId: req.storeAccess!.storeId },
+      });
+      const result = await tx.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          aiPaused: body.aiPaused,
+          // Cleared on resume rather than left behind: a stale "paused by
+          // Sara at 3pm" next to an active bot is worse than no attribution.
+          aiPausedAt: body.aiPaused ? new Date() : null,
+          aiPausedBy: body.aiPaused ? req.auth!.userId : null,
+        },
+      });
+      await writeAudit(tx, {
+        organizationId: req.auth!.organizationId,
+        storeId: req.storeAccess!.storeId,
+        actorUserId: req.auth!.userId,
+        action: body.aiPaused ? "conversation.ai_paused" : "conversation.ai_resumed",
+        entityType: "conversation",
+        entityId: conversation.id,
+        before: { aiPaused: conversation.aiPaused },
+        after: { aiPaused: result.aiPaused },
+        ip: req.ip,
+      });
+      return result;
+    });
+    res.json({ data: updated });
+  })
+);
+
 // DELETE /v1/stores/:storeId/channel-accounts/:id
 channelsRouter.delete(
   "/channel-accounts/:id",
