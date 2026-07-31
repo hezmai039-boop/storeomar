@@ -4,13 +4,55 @@
 // directly — they resolve one by key — so moving from bank transfers to a
 // hosted gateway is a new adapter file, not a rewrite of the invoice flow.
 
-export interface CheckoutInstruction {
-  kind: "offline_transfer" | "redirect";
-  /** For offline_transfer: bank details + reference to put in the transfer note. */
-  instructions?: { bankName: string; accountName: string; iban: string; reference: string; note: string };
-  /** For redirect: gateway-hosted payment page. */
-  redirectUrl?: string;
+/**
+ * The customer wires money themselves and quotes a reference. Carries the
+ * bank details, so only a deployment that has a real published IBAN may
+ * return it.
+ */
+export interface OfflineTransferCheckout {
+  kind: "offline_transfer";
+  instructions: { bankName: string; accountName: string; iban: string; reference: string; note: string };
 }
+
+/**
+ * No payment details are published at all: the customer is told the team
+ * will reach out, and the platform arranges payment person to person.
+ *
+ * This is a SEPARATE kind rather than an `offline_transfer` with blanked-out
+ * bank fields. An empty-string IBAN still renders a labelled "الآيبان" row
+ * on the checkout screen — the exact thing this provider exists to remove —
+ * and every consumer would have to remember to test for it. A distinct kind
+ * makes "there are no bank details here" a fact of the type, so a UI that
+ * has not been taught about it renders nothing rather than an empty bank
+ * block.
+ */
+export interface ContactCheckout {
+  kind: "contact";
+  contact: {
+    /** The customer is asked to quote this when the team calls. */
+    reference: string;
+    /** Digits only, international format, no `+` — what wa.me expects. */
+    whatsappNumber: string;
+    /** Ready-to-open WhatsApp link, message pre-filled with the reference. */
+    whatsappUrl: string;
+    /** Arabic explanation of what happens next. */
+    note: string;
+  };
+}
+
+/** Gateway-hosted payment page. */
+export interface RedirectCheckout {
+  kind: "redirect";
+  redirectUrl: string;
+}
+
+/**
+ * Discriminated on `kind`: each variant carries exactly the fields it needs
+ * and nothing it does not. Widening this to one interface with every field
+ * optional is what leads to a provider returning `iban: ""` to satisfy the
+ * type — see ContactCheckout.
+ */
+export type CheckoutInstruction = OfflineTransferCheckout | ContactCheckout | RedirectCheckout;
 
 export interface PaymentProvider {
   key: string; // "manual" | "moyasar" | "tap"

@@ -225,11 +225,23 @@
 @keyframes lp-rise { to { opacity: 1; transform: translateY(0); } }
 
 /* ---------------- pricing ---------------- */
-/* Four columns of content in three cards, so the grid is `auto-fit` rather
-   than the fixed repeat(3) the feature/step grids use: a future fourth plan
-   should reflow, not overflow, and the 820px breakpoint below is not the
-   only width this has to survive. */
-.lp-plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; align-items: stretch; }
+/* `auto-fit` rather than the fixed repeat(3) the feature/step grids use, so a
+   plan added or retired reflows instead of overflowing — the 820px breakpoint
+   below is not the only width this has to survive.
+
+   The 240px track floor is measured, not guessed. The section is 1120px wide
+   with 24px of padding each side, so 1072px of content: four 260px tracks plus
+   three 18px gaps wanted 1094px and auto-fit would have dropped to three
+   columns at every desktop width, stranding the fourth tier alone on a second
+   row. Four 240px tracks need 1014px and fit with room to spare.
+
+   The middle band is stated explicitly for the same reason: between the 820px
+   breakpoint and ~1060px auto-fit resolves to three tracks and strands that
+   fourth card again. Two even rows of two is the honest fallback, and one
+   column once a card is too narrow to hold its price beside its feature list. */
+.lp-plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; align-items: stretch; }
+@media (max-width: 1060px) { .lp-plans { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 620px) { .lp-plans { grid-template-columns: 1fr; } }
 .lp-plan {
   background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 26px 24px;
   backdrop-filter: blur(10px); display: flex; flex-direction: column; gap: 14px; position: relative;
@@ -328,9 +340,12 @@
 .lp-dialog .err { margin: 0; font-size: 13px; color: #ffb4a8; }
 .lp-dialog .ok { margin: 0; font-size: 14px; color: var(--accent-soft); line-height: 1.9; }
 
+/* `.lp-plans` is deliberately absent here: its column ladder lives beside its
+   own rule above, in one place. Repeating it in this block would put a later,
+   equal-specificity `1fr` on top of the 1060px/620px pair and silently undo
+   the two-up row. */
 @media (max-width: 820px) {
   .lp-grid, .lp-steps, .lp-stats { grid-template-columns: 1fr; }
-  .lp-plans { grid-template-columns: 1fr; }
   .lp-stats { gap: 22px; }
 }
 @media (prefers-reduced-motion: reduce) {

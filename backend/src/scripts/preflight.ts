@@ -54,6 +54,10 @@ for (const name of missingRequired) process.env[name] = PLACEHOLDER;
 const { env } = require("../config/env") as typeof import("../config/env");
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { MANUAL_BILLING_DEFAULTS } = require("../modules/billing/adapters/manual") as typeof import("../modules/billing/adapters/manual");
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { CONTACT_PROVIDER_DEFAULTS } = require("../modules/billing/adapters/contact") as typeof import("../modules/billing/adapters/contact");
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { DEFAULT_BILLING_PROVIDER, listPaymentProviders } = require("../modules/billing/adapters/registry") as typeof import("../modules/billing/adapters/registry");
 
 const wasProvided = (name: string) => !missingRequired.includes(name as never) && !!process.env[name];
 
@@ -199,9 +203,59 @@ function publishedDefaults(): { values: Set<string>; source: string | null } {
 // ١) المال
 // ===========================================================================
 
-function checkMoney() {
-  section("المال والفوترة");
+/**
+ * فحوص مزوّد `contact` — لا بيانات بنكية إطلاقًا.
+ *
+ * الصمت هنا خطأ بقدر التحذير الكاذب: من يقرأ هذا القسم ولا يجد ذكرًا للآيبان
+ * سيظن أن الفحص سقط، لا أن المزوّد لا يستعمل آيبانًا أصلًا. لذلك يُقال صراحة.
+ */
+function checkContactProvider() {
+  ok(
+    "`BILLING_PROVIDER` = `contact` — لا تُعرض أي بيانات بنكية داخل المنتج",
+    "العميل يختار الباقة فتُصدر فاتورة `pending`، وتظهر له رسالة «سنتواصل معك» ورقم الفاتورة وزر واتساب",
+    "بيانات السداد تُسلَّم هاتفيًا/عبر واتساب، ثم يفعّل المالك الباقة من /billing بعد وصول المبلغ",
+    "لذلك `BILLING_IBAN` و`BILLING_ACCOUNT_NAME` و`BILLING_BANK_NAME` **لا تُقرأ في هذا الوضع** ولم تُفحَص",
+    "لعرض بيانات التحويل مجددًا: BILLING_PROVIDER=manual (وحينها تعود فحوص الآيبان حواجز)"
+  );
 
+  const raw = process.env.PLATFORM_CONTACT_WHATSAPP;
+  if (!raw) {
+    // تحذير لا حاجز: هناك افتراضي معقول موثّق (رقم المالك المنشور في صفحة
+    // الهبوط)، فزر واتساب يعمل ويصل إلى إنسان حتى بلا ضبط. الحاجز يُحجز لما
+    // يؤذي عميلًا فعلًا.
+    warn(
+      "`PLATFORM_CONTACT_WHATSAPP` غير مضبوط — يُستعمل الرقم الافتراضي الموثّق",
+      `الافتراضي: ${tail4(CONTACT_PROVIDER_DEFAULTS.whatsapp)} — نفس الرقم المنشور في صفحة الهبوط`,
+      "الزر يعمل ويصل إلى إنسان، لكن تغيير رقمك لاحقًا يتطلب ضبط هذا المتغيّر لا تعديل الكود",
+      "الإصلاح (اختياري): Render ← Environment ← PLATFORM_CONTACT_WHATSAPP = رقمك بأرقام فقط بلا +"
+    );
+    return;
+  }
+
+  const digits = raw.replace(/\D/g, "").replace(/^00/, "");
+  if (!digits) {
+    blocker(
+      "`PLATFORM_CONTACT_WHATSAPP` مضبوط بقيمة لا تحوي أي رقم",
+      "رابط wa.me يُبنى من الأرقام وحدها، فينتج رابط ميت — زر التواصل الوحيد على شاشة الدفع لا يفتح شيئًا",
+      "اتركه فارغًا ليسقط إلى الافتراضي، أو اكتب الرقم بالصيغة الدولية بلا +"
+    );
+  } else if (digits.length < 10 || digits.length > 15) {
+    warn(
+      `\`PLATFORM_CONTACT_WHATSAPP\` طوله ${digits.length} رقمًا بعد التنظيف (${tail4(digits)})`,
+      "الرقم الدولي عادةً ١٠–١٥ رقمًا (السعودي: 9665XXXXXXXX = ١٢ رقمًا)",
+      "غالبًا رقم محلي بلا مفتاح الدولة — واتساب يرفض الرابط ويظهر «الرقم غير صالح»"
+    );
+  } else {
+    ok(`\`PLATFORM_CONTACT_WHATSAPP\` مضبوط (${tail4(digits)}، ${digits.length} رقمًا)`);
+  }
+}
+
+/**
+ * فحوص مزوّد `manual` — كما كانت حرفيًا قبل إضافة مزوّد `contact`. هذه هي
+ * الحالة التي كُتب فيها السكربت أصلًا: آيبان يُعرض على شاشة الدفع لعميل يحوّل
+ * إليه ماله.
+ */
+function checkManualBankDetails() {
   const rawIban = process.env.BILLING_IBAN;
   if (!rawIban) {
     blocker(
@@ -238,6 +292,46 @@ function checkMoney() {
     warn("`BILLING_BANK_NAME` غير مضبوط", `يُعرض الاسم الافتراضي «${MANUAL_BILLING_DEFAULTS.bankName}»`);
   } else {
     ok("`BILLING_BANK_NAME` مضبوط");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// قسم المال — موزَّع حسب مزوّد الدفع
+// ---------------------------------------------------------------------------
+// فحوص الآيبان ليست فحوصًا عامة للمنصة، بل فحوص **مزوّد `manual` وحده**: هو
+// الوحيد الذي يعرض رقم حساب لعميل. تشغيلها تحت مزوّد لا يقرأ الآيبان أصلًا
+// يُنتج حاجزًا كاذبًا — ومَن يتعلّم تجاهل حاجز واحد يتجاهل الحواجز الحقيقية معه.
+//
+// ضريبة القيمة المضافة تبقى خارج هذا التقسيم: `vat_halalas` تُحسب في
+// routes.ts على كل فاتورة أيًّا كان مزوّدها.
+
+function checkMoney() {
+  section("المال والفوترة");
+
+  const provider = process.env.BILLING_PROVIDER || DEFAULT_BILLING_PROVIDER;
+  const registered = new Set(listPaymentProviders().map((p) => p.key));
+
+  if (!registered.has(provider)) {
+    blocker(
+      `\`BILLING_PROVIDER\` = «${provider}» — لا يوجد مزوّد مسجَّل بهذا المفتاح`,
+      `المسجَّلون: ${[...registered].join("، ")}`,
+      "`getPaymentProvider()` يرمي، فكل نداء على POST /v1/billing/subscribe يُجيب 500 — لا أحد يستطيع الاشتراك إطلاقًا",
+      "راجع الإملاء (`src/modules/billing/adapters/registry.ts`)"
+    );
+  } else if (provider === "manual") {
+    ok(
+      "`BILLING_PROVIDER` = `manual` — بيانات التحويل البنكي تُعرض للعميل على شاشة الدفع",
+      "لذلك فحوص الآيبان أدناه حواجز: القيمة الخاطئة هنا مال عميل يذهب إلى حساب غير موجود"
+    );
+    checkManualBankDetails();
+  } else if (provider === "contact") {
+    checkContactProvider();
+  } else {
+    // مزوّد مسجَّل لكن لا يعرف هذا السكربت ما يفحصه فيه (بوابة مستقبلية).
+    unknown(
+      `\`BILLING_PROVIDER\` = «${provider}» — مزوّد مسجَّل لكن بلا فحوص خاصة به هنا`,
+      "لم تُفحَص بيانات الدفع الخاصة بهذا المزوّد. أضف فحصه في `checkMoney()` عند تفعيله"
+    );
   }
 
   const vat = Number(process.env.BILLING_VAT_PERCENT ?? "0");

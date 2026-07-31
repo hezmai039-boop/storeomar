@@ -66,6 +66,21 @@ const channelTypeDefs = [
   { key: "instagram", name: "إنستغرام", adapterKey: "meta-instagram-messaging" },
   { key: "messenger", name: "ماسنجر", adapterKey: "meta-messenger" },
   { key: "tiktok", name: "تيك توك", adapterKey: "tiktok-business-messaging" },
+  // Telegram belongs HERE, not in the demo seed — and it used to be in the
+  // demo seed, which is exactly the bug this file's header describes.
+  //
+  // docker-entrypoint.sh skips seed.ts in production, so `channel_types` had
+  // no telegram row on the real service: the adapter existed, the plans
+  // advertise the channel, and a customer clicking "connect Telegram" would
+  // find nothing behind it. Same shape as the empty `plans` table that made
+  // every webhook 500 — a row the product depends on, created only by the
+  // one script production deliberately never runs.
+  //
+  // It is also the channel that matters most for a new customer: a BotFather
+  // token, no Meta business verification, no per-message fee. It is how
+  // someone sees the product work on their own traffic within minutes
+  // (docs/27-telegram-setup.md). adapterKey matches telegramAdapter.key.
+  { key: "telegram", name: "تيليجرام", adapterKey: "telegram" },
   // Local-dev/demo channel — see src/modules/channels/adapters/mock.ts.
   { key: "mock", name: "قناة تجريبية", adapterKey: "mock-console" },
 ];
@@ -99,9 +114,22 @@ for (const def of channelTypeDefs) {
 // unreadable when you are looking at the row you are about to charge.)
 //
 // sortOrder leaves a gap after each paid tier so the yearly twin can sit
-// immediately beside its monthly one (free 1 · basic 2/3 · pro 4/5) — the
-// landing page pairs them by key, but a human reading the table should see
-// the pair adjacent too.
+// immediately beside its monthly one (free 1 · basic 2/3 · growth 4/5 ·
+// business 6/7) — the landing page pairs them by key, but a human reading the
+// table should see the pair adjacent too.
+//
+// WHY EVERY TIER LISTS EVERY CHANNEL
+// ----------------------------------
+// The ladder meters AI replies and seats; it does NOT meter which channels a
+// tenant may connect. That is a cost decision, not a generosity one: a channel
+// adapter is already written and costs us nothing per tenant — connecting
+// تيليجرام as well as واتساب adds no marginal expense — whereas every AI reply
+// is a paid Anthropic call. Gating the free thing and giving away the metered
+// one is the shape that loses money on heavy users while turning light ones
+// away at the door. It is also what the market already expects: the incumbent
+// on the Salla app store ships every channel in every tier and differentiates
+// on message volume, seats and integrations, so channel gating reads as a
+// missing feature rather than as a reason to upgrade.
 const monthlyPlanDefs = [
   {
     key: "free",
@@ -112,29 +140,58 @@ const monthlyPlanDefs = [
     maxUsers: 2,
     maxAiRepliesMonthly: 100,
     sortOrder: 1,
-    features: ["قناة واتساب واحدة", "قاعدة معرفة لمتجرك"],
+    features: ["جميع القنوات (واتساب، إنستغرام، ماسنجر، تيك توك، تيليجرام)", "قاعدة معرفة لمتجرك"],
   },
   {
     key: "basic",
     name: "الأساسية",
     nameEn: "Basic",
-    priceHalalas: 29900,
-    maxStores: 3,
-    maxUsers: 5,
-    maxAiRepliesMonthly: 2000,
+    priceHalalas: 7900,
+    maxStores: 1,
+    maxUsers: 3,
+    maxAiRepliesMonthly: 1000,
     sortOrder: 2,
-    features: ["جميع القنوات", "التقارير الأساسية", "روابط محاكاة للتجربة"],
+    features: [
+      "جميع القنوات (واتساب، إنستغرام، ماسنجر، تيك توك، تيليجرام)",
+      "قاعدة معرفة لمتجرك",
+      "روابط محاكاة للتجربة",
+      "التقارير الأساسية",
+    ],
   },
   {
-    key: "pro",
-    name: "الاحترافية",
-    nameEn: "Pro",
-    priceHalalas: 79900,
+    key: "growth",
+    name: "النمو",
+    nameEn: "Growth",
+    priceHalalas: 22900,
+    maxStores: 3,
+    maxUsers: 10,
+    maxAiRepliesMonthly: 5000,
+    sortOrder: 4,
+    features: [
+      "جميع القنوات (واتساب، إنستغرام، ماسنجر، تيك توك، تيليجرام)",
+      "قاعدة معرفة لمتجرك",
+      "روابط محاكاة للتجربة",
+      "ربط سلة وزد",
+      "دعم بأولوية في الرد",
+    ],
+  },
+  {
+    key: "business",
+    name: "الأعمال",
+    nameEn: "Business",
+    priceHalalas: 59900,
     maxStores: null,
     maxUsers: null,
     maxAiRepliesMonthly: 20000,
-    sortOrder: 4,
-    features: ["ذكاء الأعمال المتقدّم", "ربط سلة وزد", "دعم مخصص وأولوية في الرد"],
+    sortOrder: 6,
+    features: [
+      "جميع القنوات (واتساب، إنستغرام، ماسنجر، تيك توك، تيليجرام)",
+      "قاعدة معرفة لمتجرك",
+      "روابط محاكاة للتجربة",
+      "ربط سلة وزد",
+      "ذكاء الأعمال المتقدّم",
+      "دعم مخصص وأولوية في الرد",
+    ],
   },
 ];
 
@@ -195,6 +252,31 @@ for (const def of planDefs) {
   });
   planByKey.set(def.key, plan);
 }
+
+// --- Retired tiers ---
+// `pro` was replaced by `growth` + `business`. It is DEACTIVATED, never
+// deleted: `subscriptions.plan_id` and `invoices.plan_id` are foreign keys,
+// so deleting the row would either fail outright or (worse) orphan the
+// billing history of every customer ever charged on it — an invoice that
+// cannot name the plan it billed is not an invoice. Deactivating instead
+// keeps every FK resolvable while GET /v1/public/plans (which filters on
+// `isActive`) and the billing screen stop offering it, which is exactly what
+// "retired" means: unsellable, not unremembered.
+//
+// This needs its own explicit update rather than an `isActive: false` in the
+// def above, because the upsert deliberately keeps `isActive` OUT of its
+// `update` block so that re-seeding never un-hides a plan an operator hid by
+// hand. That protection cuts both ways — it would also swallow this change —
+// so retiring a tier is stated here, once, as the deliberate act it is.
+//
+// updateMany, not update: it is a no-op on a database that never had the row
+// (a fresh install, or one seeded after this change), whereas update() throws
+// P2025 and would fail the seed that runs on every deploy.
+const retiredPlanKeys = ["pro", "pro_yearly"];
+await prisma.plan.updateMany({
+  where: { key: { in: retiredPlanKeys } },
+  data: { isActive: false },
+});
 }
 
 // Runnable on its own: `npx tsx prisma/seed-reference.ts`. docker-entrypoint.sh

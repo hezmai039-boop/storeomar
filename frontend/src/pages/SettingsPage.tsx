@@ -1,9 +1,10 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { api, ApiClientError, BASE_URL } from "../api/client";
-import type { AiAgent, ChannelAccount, Integration } from "../api/types";
+import type { AiAgent, ChannelAccount, ChannelDiagnosis, Integration } from "../api/types";
 import { useStore } from "../context/StoreContext";
 import { useAuth } from "../context/AuthContext";
 import { BrandTile } from "../components/BrandIcons";
+import { readChannelError } from "../lib/channelErrors";
 
 interface CredentialField {
   key: string;
@@ -43,6 +44,16 @@ const CHANNEL_TYPES: Array<{ key: string; label: string; fields: CredentialField
   },
   { key: "mock", label: "قناة تجريبية (بدون حساب حقيقي)", fields: [] },
 ];
+
+// Same vocabulary as the owner's «صحة القنوات» table on /overview — a raw
+// English `status` in one place and Arabic in the other reads as two
+// different systems.
+const CHANNEL_STATUS_AR: Record<string, string> = {
+  connected: "متصلة",
+  error: "خطأ — القناة لا ترسل",
+  disconnected: "مفصولة",
+  pending: "قيد الإعداد",
+};
 
 const PLATFORMS: Array<{ key: string; label: string; fields: CredentialField[] }> = [
   { key: "salla", label: "سلة", fields: [{ key: "accessToken", label: "Access Token" }] },
@@ -126,6 +137,13 @@ export function SettingsPage() {
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [updateSuccessId, setUpdateSuccessId] = useState<string | null>(null);
 
+  // «فحص القناة» — a recipient-free diagnosis. The point is that the owner
+  // can answer "why did it stop?" themselves instead of seeing a channel
+  // that claims to be «متصلة» while nothing has been delivered for days.
+  const [diagnosingId, setDiagnosingId] = useState<string | null>(null);
+  const [diagnosis, setDiagnosis] = useState<{ channelId: string; result: ChannelDiagnosis } | null>(null);
+  const [diagnoseError, setDiagnoseError] = useState<string | null>(null);
+
   const [platformKey, setPlatformKey] = useState(PLATFORMS[0].key);
   const [platformCreds, setPlatformCreds] = useState<Record<string, string>>({});
   const [platformSubmitting, setPlatformSubmitting] = useState(false);
@@ -205,6 +223,23 @@ export function SettingsPage() {
       setUpdateError(err instanceof ApiClientError ? err.message : "تعذّر تحديث بيانات الاعتماد");
     } finally {
       setUpdateSubmitting(false);
+    }
+  }
+
+  async function diagnoseChannel(channel: ChannelAccount) {
+    setDiagnosingId(channel.id);
+    setDiagnoseError(null);
+    setDiagnosis(null);
+    try {
+      const resp = await api.post<{ data: { diagnosis: ChannelDiagnosis } }>(
+        `/v1/stores/${activeStore!.id}/channel-accounts/${channel.id}/diagnose`
+      );
+      setDiagnosis({ channelId: channel.id, result: resp.data.diagnosis });
+      reload(); // the check writes what it learned back onto the channel row
+    } catch (err) {
+      setDiagnoseError(err instanceof ApiClientError ? err.message : "تعذّر تنفيذ الفحص");
+    } finally {
+      setDiagnosingId(null);
     }
   }
 
@@ -320,10 +355,50 @@ export function SettingsPage() {
                 <BrandTile brand={c.channelType.key} />
                 <span style={{ fontWeight: 700, fontSize: 13.5 }}>{c.displayName}</span>
               </div>
-              <span className={`badge ${c.status === "connected" ? "badge-good" : "badge-critical"}`}>{c.status}</span>
+              <span className={`badge ${c.status === "connected" ? "badge-good" : "badge-critical"}`}>
+                {CHANNEL_STATUS_AR[c.status] ?? c.status}
+              </span>
+              {/* The recorded cause, in Arabic. A red badge that cannot say
+                  WHY is what sent the owner back to guessing. */}
+              {(() => {
+                const err = readChannelError(c.lastError);
+                if (!err) return null;
+                return (
+                  <div
+                    style={{
+                      marginTop: 10,
+                      padding: "8px 10px",
+                      borderRadius: 8,
+                      background: "var(--critical-soft, rgba(220,38,38,0.08))",
+                      fontSize: 11.5,
+                      lineHeight: 1.7,
+                    }}
+                  >
+                    <div style={{ color: "var(--critical)", fontWeight: 700 }}>آخر خطأ مسجَّل</div>
+                    <div style={{ color: "var(--text-dim)" }}>{err.messageAr}</div>
+                    {err.fixAr && <div style={{ marginTop: 4, color: "var(--text-dim)" }}>الحل: {err.fixAr}</div>}
+                    {c.lastErrorAt && (
+                      <div className="mono" style={{ marginTop: 4, color: "var(--text-faint)", fontSize: 10.5 }}>
+                        {new Date(c.lastErrorAt).toLocaleString("ar-SA")}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
               {c.channelType.key !== "mock" && (
                 <div style={{ marginTop: 10 }}>
                   {updateSuccessId === c.id && <span className="badge badge-good">تم تحديث البيانات</span>}
+                  {c.channelType.key === "whatsapp" && (
+                    <button
+                      className="btn btn-sm"
+                      type="button"
+                      style={{ marginBottom: 8, width: "100%" }}
+                      disabled={diagnosingId === c.id}
+                      onClick={() => diagnoseChannel(c)}
+                    >
+                      {diagnosingId === c.id ? "جارٍ الفحص…" : "فحص القناة"}
+                    </button>
+                  )}
                   {updatingChannelId === c.id ? (
                     <form
                       onSubmit={(e) => updateChannelCredentials(e, c)}
@@ -376,6 +451,86 @@ export function SettingsPage() {
             </div>
           ))}
         </div>
+
+        {diagnoseError && (
+          <div className="card" style={{ padding: 14, marginBottom: 18, color: "var(--critical)", fontSize: 12.5 }}>
+            {diagnoseError}
+          </div>
+        )}
+
+        {diagnosis && (
+          <div className="card ms-enter" style={{ padding: 18, marginBottom: 18 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+              <h3 style={{ fontSize: 14, margin: 0 }}>نتيجة فحص القناة</h3>
+              <span className={`badge ${diagnosis.result.healthy ? "badge-good" : "badge-critical"}`}>
+                {diagnosis.result.healthy ? "القناة تعمل" : "القناة متوقفة"}
+              </span>
+              <button className="btn btn-sm" type="button" onClick={() => setDiagnosis(null)} style={{ marginRight: "auto" }}>
+                إغلاق
+              </button>
+            </div>
+            <p style={{ margin: "0 0 12px", fontSize: 11.5, color: "var(--text-faint)" }}>
+              فحص مباشر مع Meta بلا إرسال أي رسالة لأي عميل — {new Date(diagnosis.result.checkedAt).toLocaleString("ar-SA")}
+            </p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {diagnosis.result.checks.map((check) => (
+                <div
+                  key={check.key}
+                  style={{
+                    display: "flex",
+                    gap: 10,
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  <span
+                    className={`badge ${
+                      check.status === "ok" ? "badge-good" : check.status === "warn" ? "badge-warn" : "badge-critical"
+                    }`}
+                    style={{ height: "fit-content", whiteSpace: "nowrap" }}
+                  >
+                    {check.status === "ok" ? "سليم" : check.status === "warn" ? "تنبيه" : "عطل"}
+                  </span>
+                  <div style={{ fontSize: 12.5, lineHeight: 1.8 }}>
+                    <b>{check.label}</b>
+                    <div style={{ color: "var(--text-dim)" }}>{check.detail}</div>
+                    {check.fix && <div style={{ marginTop: 4, color: "var(--text-dim)" }}>الحل: {check.fix}</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ marginTop: 12, fontSize: 11.5, color: "var(--text-faint)", lineHeight: 1.9 }}>
+              <div>
+                رابط الويبهوك المتوقَّع في لوحة Meta:{" "}
+                <code className="mono" style={{ wordBreak: "break-all" }}>
+                  {diagnosis.result.webhook.callbackUrl}
+                </code>
+              </div>
+              {diagnosis.result.tokenExpiresAt && (
+                <div>انتهاء صلاحية التوكن: {new Date(diagnosis.result.tokenExpiresAt).toLocaleString("ar-SA")}</div>
+              )}
+            </div>
+
+            {/* Meta's own words — present only for platform staff, and even
+                then kept visually apart from the merchant-facing text. */}
+            {diagnosis.result.staffOnly && (
+              <details style={{ marginTop: 12 }}>
+                <summary style={{ fontSize: 11.5, color: "var(--text-faint)", cursor: "pointer" }}>
+                  تفاصيل تقنية (طاقم المنصة فقط)
+                </summary>
+                <pre
+                  className="mono"
+                  style={{ fontSize: 11, whiteSpace: "pre-wrap", wordBreak: "break-all", color: "var(--text-dim)" }}
+                >
+                  {`HTTP ${diagnosis.result.staffOnly.httpStatus} · code=${diagnosis.result.staffOnly.code} · subcode=${diagnosis.result.staffOnly.subcode}\n${diagnosis.result.staffOnly.rawMetaError}`}
+                </pre>
+              </details>
+            )}
+          </div>
+        )}
 
         {lastVerifyToken && (
           <div className="card ms-enter" style={{ padding: 16, marginBottom: 18, borderColor: "var(--good)", boxShadow: "0 8px 24px rgba(22,163,74,0.15)" }}>

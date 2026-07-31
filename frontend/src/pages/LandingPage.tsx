@@ -62,6 +62,28 @@ interface PlanGroup {
 
 const YEARLY_SUFFIX = "_yearly";
 
+/**
+ * Which tier wears "الأكثر طلبًا".
+ *
+ * Deliberately a constant in the frontend and NOT a column on `Plan`. Which
+ * tier we push is a marketing decision — it moves with a campaign, a
+ * competitor's price change, or a week of conversion data — and a schema
+ * migration is far too heavy a unit of change for something re-decided that
+ * often. Storing it in the database would also make it a value someone has to
+ * remember to un-set on the old tier when they set it on the new one.
+ *
+ * It replaces the previous "highlight whatever card is in the middle", which
+ * was correct only for exactly three tiers: with four, the middle by position
+ * is الأساسية — the cheapest paid tier — and the page would have recommended
+ * the plan it least wants a visitor to stop at.
+ *
+ * Keyed by BASE key, so the same tier is recommended in both billing tabs
+ * (`growth` and `growth_yearly` are one recommendation, not two). Nothing is
+ * highlighted if no listed key is on the catalogue, which is the honest
+ * degradation: no badge beats a badge on an arbitrary card.
+ */
+const RECOMMENDED_PLAN_KEYS: readonly string[] = ["growth"];
+
 function baseKeyOf(key: string): string {
   return key.endsWith(YEARLY_SUFFIX) ? key.slice(0, -YEARLY_SUFFIX.length) : key;
 }
@@ -149,11 +171,6 @@ export function LandingPage() {
   const shownPlans = groups
     .map((g) => ({ group: g, plan: planFor(g, hasYearly ? interval : "monthly") }))
     .filter((entry): entry is { group: PlanGroup; plan: PublicPlan } => entry.plan !== null);
-  // "Recommend the middle one" — by position in whatever is on screen, so the
-  // tab that hides a tier still highlights a sensible card. The old expression
-  // read plans[1] directly and assumed exactly three; this degrades to "none"
-  // below three, where a middle does not mean anything.
-  const featuredIndex = shownPlans.length >= 3 ? Math.floor((shownPlans.length - 1) / 2) : -1;
 
   return (
     <div className="lp">
@@ -271,8 +288,8 @@ export function LandingPage() {
             </div>
           )}
           <div className="lp-plans">
-            {shownPlans.map(({ group, plan: p }, i) => {
-              const featured = i === featuredIndex;
+            {shownPlans.map(({ group, plan: p }) => {
+              const featured = RECOMMENDED_PLAN_KEYS.includes(group.base);
               const free = p.priceHalalas === 0;
               const yearly = p.interval === "yearly";
               // Only claimed on the card the visitor is actually looking at,

@@ -11,6 +11,7 @@ import { createTicketFromConversation } from "../tickets/service";
 import { publish } from "./realtime";
 import { decryptSecret } from "../../lib/crypto";
 import { webhookRateLimiter } from "../../lib/rateLimit";
+import { diagnoseSendError, recordChannelOutcome } from "./channelHealth";
 
 export const webhooksRouter = Router();
 
@@ -174,8 +175,18 @@ async function processInboundMessages(
       try {
         const credentials = JSON.parse(decryptSecret(account.credentialsEncrypted));
         await adapter.sendMessage(credentials, { toExternalId: customer.externalId, text: result.replyText });
+        // The channel demonstrably works right now — clear any stale error
+        // so «صحة القنوات» stops accusing a channel that recovered.
+        await recordChannelOutcome(account.storeId, account.id, { ok: true });
       } catch (err) {
-        console.error(`Failed to send AI reply via ${channelTypeKey}:`, err);
+        // A swallowed console.error was the entire failure story here: the
+        // channel row kept saying "connected" while every AI reply silently
+        // failed to leave the building. Record the parsed cause on the row.
+        const parsed = diagnoseSendError(err);
+        console.error(
+          `Failed to send AI reply via ${channelTypeKey} (reason=${parsed.reason}): ${parsed.rawExcerpt}`
+        );
+        await recordChannelOutcome(account.storeId, account.id, { ok: false, parsed });
       }
       publish(account.storeId, { type: "message.created", conversationId: conversation.id, messageId: persisted.aiMsgId });
     }

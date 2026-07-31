@@ -250,6 +250,18 @@ model ChannelAccount {
   webhookVerifyToken   String?   @map("webhook_verify_token")
   status               String    @default("connected")
   connectedAt          DateTime? @map("connected_at") @db.Timestamptz(6)
+  // Why a channel is not working, in the platform's own words — set on a
+  // failed send, cleared on a successful one. Without these three columns
+  // `status` was the only signal, and it stayed "connected" for a channel
+  // that had been dead for a week (docs/22 §"تشخيص الأعطال").
+  // Encoded as `[reason] عربي` — see formatChannelLastError in
+  // src/modules/channels/adapters/metaErrors.ts. Never holds Meta's raw
+  // body: that is log + platform-staff only.
+  lastError            String?   @map("last_error")
+  lastErrorAt          DateTime? @map("last_error_at") @db.Timestamptz(6)
+  // Known expiry of the stored access token. Meta test-number tokens last
+  // ~24h; a System User token reports expires_at = 0 and leaves this NULL.
+  tokenExpiresAt       DateTime? @map("token_expires_at") @db.Timestamptz(6)
   createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 

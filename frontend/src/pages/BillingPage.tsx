@@ -610,6 +610,64 @@ export function BillingPage() {
           })}
         </div>
 
+        {/* The `contact` provider (default). No bank details exist in this
+            payload at all — the team passes them to the customer directly —
+            so this block is an invoice number to quote plus one way to
+            reach a human. See docs/25-billing-and-plans.md §5. */}
+        {checkout?.kind === "contact" && (
+          <div className="card" style={{ padding: "18px 20px", marginTop: 16 }}>
+            <b style={{ fontSize: 14 }}>سنتواصل معك لإتمام الدفع</b>
+
+            {/* Same weight as the transfer reference gets under `manual`:
+                this is the one string the customer must have to hand when
+                the call comes. */}
+            <div
+              style={{
+                marginTop: 12,
+                padding: "14px 16px",
+                borderRadius: "var(--radius-md)",
+                background: "var(--primary-tint)",
+                border: "1px solid var(--primary)",
+              }}
+            >
+              <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 6 }}>
+                رقم فاتورتك — اذكره عند تواصلنا معك:
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <b className="mono" dir="ltr" style={{ fontSize: 20, letterSpacing: 1 }}>
+                  {checkout.contact.reference}
+                </b>
+                <button className="btn btn-primary btn-sm" onClick={() => copyValue("ref", checkout.contact.reference)}>
+                  {copied === "ref" ? "تم النسخ ✓" : "نسخ رقم الفاتورة"}
+                </button>
+              </div>
+            </div>
+
+            <p style={{ margin: "12px 0 0", fontSize: 12.5, color: "var(--text-dim)", lineHeight: 1.8 }}>
+              {checkout.contact.note}
+            </p>
+
+            {/* The single conversion action on this screen, so it is the
+                one element that spends the brand orange (docs/32-brand.md
+                §1). btn-accent, not a hand-rolled orange button: it carries
+                NAVY text on the orange fill (4.93:1). White on #FF6A00 is
+                2.87:1 and fails WCAG AA — never write it. */}
+            <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <a
+                className="btn btn-accent"
+                href={checkout.contact.whatsappUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                تواصل معنا عبر واتساب
+              </a>
+              <span className="mono" dir="ltr" style={{ fontSize: 12.5, color: "var(--text-dim)" }}>
+                +{checkout.contact.whatsappNumber}
+              </span>
+            </div>
+          </div>
+        )}
+
         {checkout?.kind === "offline_transfer" && checkout.instructions && (
           <div className="card" style={{ padding: "18px 20px", marginTop: 16 }}>
             <b style={{ fontSize: 14 }}>حوّل المبلغ إلى الحساب التالي</b>
