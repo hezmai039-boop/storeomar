@@ -54,6 +54,23 @@ export class ApiClientError extends Error {
   }
 }
 
+/**
+ * How long a request may hang before we give up on it.
+ *
+ * 60s, which is deliberately long: this app is deployed on a host that
+ * suspends idle instances, and waking one takes ~50 seconds. A 30s timeout
+ * would abort exactly the request that was about to succeed, and the user
+ * would learn nothing except that the product is broken.
+ *
+ * Its real job is not speed, it is CLOSURE. `fetch` has no timeout of its
+ * own, so before this a hung request left every page spinning forever —
+ * neither `.then` nor `.catch` ever ran, so the error handling those pages
+ * already had could not fire. An infinite spinner tells the user nothing
+ * and gives them nothing to do; a message that names the likely cause lets
+ * them act.
+ */
+const REQUEST_TIMEOUT_MS = 60_000;
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = { ...(options.headers as Record<string, string>) };
   if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
@@ -62,7 +79,37 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
   if (options.body && !headers["Content-Type"] && !isFormData) headers["Content-Type"] = "application/json";
 
-  const resp = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+  // AbortController rather than Promise.race: race leaves the real request
+  // running in the background, so a slow endpoint keeps burning a connection
+  // (and can still resolve and mutate state) long after the user gave up.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  let resp: Response;
+  try {
+    resp = await fetch(`${BASE_URL}${path}`, { ...options, headers, signal: controller.signal });
+  } catch (err) {
+    // Two very different failures arrive here identically, and telling them
+    // apart is the whole point — "the server is asleep" and "you are
+    // offline" need opposite reactions from the user.
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new ApiClientError(
+        0,
+        "TIMEOUT",
+        "الخادم لم يستجب خلال دقيقة. قد يكون في وضع السكون — أعد المحاولة بعد لحظات، فأول طلب بعد فترة خمول يستغرق وقتًا أطول."
+      );
+    }
+    throw new ApiClientError(
+      0,
+      "NETWORK_ERROR",
+      "تعذّر الوصول إلى الخادم. تحقّق من اتصالك بالإنترنت، أو أن الخادم يعمل."
+    );
+  } finally {
+    // In the finally so it runs on the success path too — otherwise every
+    // completed request leaves a live timer behind, and a long session
+    // accumulates thousands of them.
+    clearTimeout(timer);
+  }
   if (resp.status === 204) return undefined as T;
 
   const json = await resp.json().catch(() => null);

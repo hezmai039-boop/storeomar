@@ -65,5 +65,10 @@ else
   echo "Skipping demo data seed (set SEED_DEMO_DATA=true to enable)."
 fi
 
-echo "Starting Atlas backend..."
-exec npx tsx src/index.ts
+# Compiled JS, not `tsx src/index.ts`. See the Dockerfile's `npm run build`.
+# `exec` so node becomes PID 1 and receives SIGTERM directly — without it the
+# shell holds PID 1, swallows the signal, and the platform escalates to
+# SIGKILL after its grace period, cutting in-flight requests instead of
+# letting them drain.
+echo "Starting Maysoor backend..."
+exec node dist/index.js
