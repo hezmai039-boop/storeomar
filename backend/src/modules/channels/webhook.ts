@@ -97,6 +97,11 @@ async function processInboundMessages(
         storeName: account.store.name,
         question: inbound.text,
         conversationId: conversation.id,
+        // Lets the router honour the per-channel switch. The simulation path
+        // deliberately omits it — there is no real channel account behind a
+        // simulation link, so there is nothing for a merchant to have
+        // silenced there.
+        channelAccountId: account.id,
         customerId: customer.id,
         organizationId: account.store.organizationId,
       })

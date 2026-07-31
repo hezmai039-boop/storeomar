@@ -13,6 +13,10 @@ export function InboxPage() {
   const [summary, setSummary] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [aiPaused, setAiPaused] = useState(false);
+  // Per-conversation takeover, keyed by conversation id. Kept beside the
+  // list rather than on `selected` so toggling one does not require
+  // refetching every conversation.
+  const [takingOver, setTakingOver] = useState(false);
 
   useEffect(() => {
     if (!activeStore) return;
@@ -41,6 +45,33 @@ export function InboxPage() {
   if (!activeStore) return <div style={{ color: "var(--text-dim)" }}>اختر متجرًا من القائمة الجانبية أولًا.</div>;
 
   const selected = conversations.find((c) => c.id === selectedId);
+
+  /**
+   * Human takeover for THIS conversation only.
+   *
+   * Separate from the store-wide pause above it on purpose: when the AI
+   * answers one customer badly, the instinct is to rescue that conversation,
+   * not to silence the bot for everyone else mid-conversation.
+   *
+   * Takes effect on the customer's NEXT message. A reply already in flight
+   * for a message that arrived a second ago still lands — nothing can recall
+   * it, and the confirmation text says so rather than implying otherwise.
+   */
+  async function toggleConversationAi(next: boolean) {
+    if (!selectedId || !activeStore) return;
+    setTakingOver(true);
+    try {
+      const resp = await api.patch<{ data: Conversation }>(
+        `/v1/stores/${activeStore.id}/conversations/${selectedId}/ai`,
+        { aiPaused: next }
+      );
+      setConversations((list) =>
+        list.map((c) => (c.id === selectedId ? { ...c, aiPaused: resp.data.aiPaused, aiPausedAt: resp.data.aiPausedAt } : c))
+      );
+    } finally {
+      setTakingOver(false);
+    }
+  }
 
   async function sendReply() {
     if (!draft.trim() || !selectedId || !activeStore) return;
@@ -166,7 +197,34 @@ export function InboxPage() {
                   <b style={{ fontSize: 14 }}>{selected.customer.name ?? selected.customer.externalId}</b>
                   <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{selected.channelAccount.channelType.name}</div>
                 </div>
-                <div style={{ display: "flex", gap: 8 }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  {/* The takeover switch sits FIRST — left-most in RTL — because
+                      it is the button someone reaches for under pressure, when
+                      the bot has just said something wrong in front of a
+                      customer. Hunting for it costs the merchant a reply. */}
+                  {selected.aiPaused ? (
+                    <button
+                      className="btn btn-good btn-sm"
+                      disabled={takingOver}
+                      onClick={() => toggleConversationAi(false)}
+                      title="سيعود الرد الآلي على رسائل هذا العميل القادمة"
+                    >
+                      {takingOver ? "جارٍ…" : "↩ إعادة الرد الآلي"}
+                    </button>
+                  ) : (
+                    <button
+                      className="btn btn-danger btn-sm"
+                      disabled={takingOver || aiPaused}
+                      onClick={() => toggleConversationAi(true)}
+                      title={
+                        aiPaused
+                          ? "الرد الآلي متوقف أصلًا على مستوى المتجر"
+                          : "يتوقف الرد الآلي لهذا العميل وحده — بقية العملاء لا تتأثر"
+                      }
+                    >
+                      {takingOver ? "جارٍ…" : "🖐 أتولّى هذه المحادثة"}
+                    </button>
+                  )}
                   <button className="btn btn-ghost btn-sm" onClick={summarize}>
                     ↪ تلخيص المحادثة
                   </button>
@@ -175,6 +233,22 @@ export function InboxPage() {
                   </button>
                 </div>
               </div>
+
+              {selected.aiPaused && (
+                <div
+                  style={{
+                    padding: "10px 18px",
+                    background: "var(--warn-tint)",
+                    color: "var(--text)",
+                    fontSize: 12.5,
+                    lineHeight: 1.8,
+                    borderBottom: "1px solid var(--border)",
+                  }}
+                >
+                  <b>أنت تتولّى هذه المحادثة.</b> الرد الآلي متوقف لهذا العميل وحده — بقية عملائك تُجاب تلقائيًا كالمعتاد.
+                  يسري على رسالته القادمة؛ ردّ أُرسل قبل ثانية لا يمكن سحبه.
+                </div>
+              )}
 
               <div style={{ flex: 1, overflowY: "auto", padding: 18, display: "flex", flexDirection: "column", gap: 12 }}>
                 {summary && (

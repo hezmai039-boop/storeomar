@@ -249,6 +249,22 @@ model ChannelAccount {
   credentialsEncrypted Bytes     @map("credentials_encrypted")
   webhookVerifyToken   String?   @map("webhook_verify_token")
   status               String    @default("connected")
+  // Whether the AI answers on THIS channel. The second of three levels —
+  // store (ai_agents.status) → channel (here) → conversation
+  // (conversations.ai_paused) — and the narrowest one wins.
+  //
+  // It exists because "connect every channel" and "let the AI answer on
+  // every channel" are different decisions. A merchant will happily route
+  // Instagram and Telegram to the bot while insisting a human answers
+  // WhatsApp, because WhatsApp is where their highest-intent buyers are.
+  // Without this the only way to express that is to leave the channel
+  // disconnected, which also loses the unified inbox — so they connect
+  // nothing and the product loses the account.
+  //
+  // Defaults true: every channel connected before this column existed was
+  // connected in order to be answered, so true preserves their behaviour
+  // exactly. See docs/34-reply-control.md.
+  aiEnabled            Boolean   @default(true) @map("ai_enabled")
   connectedAt          DateTime? @map("connected_at") @db.Timestamptz(6)
   // Why a channel is not working, in the platform's own words — set on a
   // failed send, cleared on a successful one. Without these three columns
@@ -308,6 +324,22 @@ model Conversation {
   customerId        String    @map("customer_id") @db.Uuid
   status            String    @default("open")
   assignedUserId    String?   @map("assigned_user_id") @db.Uuid
+  // Human takeover for ONE customer. The narrowest of the three levels, and
+  // the one that matters most in practice: when the AI says something wrong
+  // to a single customer, the owner's instinct is to rescue THAT
+  // conversation — not to switch the bot off for every other customer
+  // mid-conversation, which is what a store-wide kill switch forces.
+  //
+  // Deliberately separate from assignedUserId. Assignment is "this is
+  // Sara's to answer"; this is "the machine stops here". They look similar
+  // and are not: a conversation can be assigned for follow-up while the AI
+  // keeps handling routine questions, and an unassigned conversation can
+  // still need the bot silenced immediately.
+  aiPaused          Boolean   @default(false) @map("ai_paused")
+  aiPausedAt        DateTime? @map("ai_paused_at") @db.Timestamptz(6)
+  // Who took over, for the audit trail and so the inbox can say "أوقفه
+  // فهد قبل ١٠ دقائق" rather than an anonymous paused badge.
+  aiPausedBy        String?   @map("ai_paused_by") @db.Uuid
   aiConfidenceLevel String?   @map("ai_confidence_level")
   lastMessageAt     DateTime? @map("last_message_at") @db.Timestamptz(6)
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
