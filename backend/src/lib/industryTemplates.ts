@@ -25,7 +25,7 @@
  * conversation (§7).
  */
 
-export type IndustryTemplateKey = "restaurant" | "real_estate" | "salon";
+export type IndustryTemplateKey = "restaurant" | "real_estate" | "salon" | "retail";
 
 export interface IndustryKnowledgeEntry {
   /** Customer-phrased question — also stored in chunk metadata so the review UI can show it. */
@@ -236,7 +236,101 @@ const salon: IndustryTemplate = {
   ],
 };
 
+
+// Online retail — the largest segment on Salla and Zid, and the one a new
+// merchant most often arrives from. The questions below are not invented:
+// they are the ones a Saudi store gets before a customer will buy, in the
+// order they get asked. Shipping and returns dominate, because that is what
+// a first-time buyer is actually risking.
+//
+// Same placeholder rule as every other template: any real number is a
+// [placeholder]. Shipping "3–5 days" written as fact for a store that takes
+// 10 is worse than silence — the AI answers it confidently, and the
+// confidence gate cannot catch it because that gate measures retrieval
+// certainty, not whether the stored sentence is true.
+const retail: IndustryTemplate = {
+  key: "retail",
+  name: "متاجر إلكترونية (تجزئة)",
+  sourceTitle: "الأسئلة الشائعة — متجر إلكتروني",
+  sourceType: "faq",
+  entries: [
+    {
+      question: "متى يوصل طلبي؟",
+      answer:
+        "الطلبات داخل [المدينة] تصل خلال [٢-٣] أيام عمل، وبقية مناطق المملكة خلال [٣-٥] أيام عمل. تُشحن الطلبات المؤكدة قبل الساعة [٢] ظهرًا في نفس اليوم. يصلك رقم التتبّع على جوالك فور خروج الشحنة من المستودع.",
+      topic: "delivery",
+    },
+    {
+      question: "كم رسوم الشحن؟ وهل فيه شحن مجاني؟",
+      answer:
+        "رسوم الشحن [٢٥] ريالًا داخل المملكة، ومجاني للطلبات فوق [٢٠٠] ريال. تظهر الرسوم النهائية في صفحة الدفع قبل تأكيد الطلب، فلا توجد أي مبالغ تُضاف بعدها.",
+      topic: "delivery",
+    },
+    {
+      question: "أبغى أرجّع المنتج، وش الإجراءات؟",
+      answer:
+        "يمكنك إرجاع المنتج خلال [١٤] يومًا من الاستلام بشرط أن يكون بحالته الأصلية مع العلبة والملحقات وغير مستخدم. أرسل لنا رقم الطلب وصورة المنتج هنا، ونرتّب لك الاستلام من عنوانك. يُعاد المبلغ خلال [٥-٧] أيام عمل على نفس وسيلة الدفع.",
+      topic: "cancellation",
+    },
+    {
+      question: "المنتج وصلني تالف / غلط، وش أسوي؟",
+      answer:
+        "نعتذر عن ذلك. أرسل لنا رقم الطلب وصورة واضحة للمنتج كما وصلك، ونستبدله أو نعيد المبلغ كاملًا حسب رغبتك — والشحن علينا في الحالتين. لا تحتاج لإعادة تغليفه بشكل خاص، فقط احتفظ به كما هو حتى نتواصل معك.",
+      topic: "cancellation",
+    },
+    {
+      question: "أقدر ألغي الطلب أو أعدّله؟",
+      answer:
+        "نعم، ما دام الطلب لم يخرج من المستودع. أرسل لنا رقم الطلب فورًا وسنتحقق. إذا كان قد شُحن فعلًا، يمكنك رفضه عند الاستلام أو إرجاعه بعد الاستلام حسب سياسة الإرجاع.",
+      topic: "cancellation",
+    },
+    {
+      question: "هل المنتج متوفر بمقاس/لون ثاني؟",
+      answer:
+        "المتوفر حاليًا يظهر مباشرة في صفحة المنتج على المتجر — الخيارات المنفدة تظهر باهتة وغير قابلة للاختيار. أخبرنا باسم المنتج والمقاس أو اللون الذي تريده ونتحقق لك، وإذا كان منفدًا نبلغك فور توفّره.",
+      topic: "general",
+    },
+    {
+      question: "وش طرق الدفع المتاحة؟",
+      answer:
+        "نستقبل مدى، والبطاقات الائتمانية (فيزا وماستركارد)، وApple Pay، وتابي/تمارا للتقسيط. جميع المدفوعات تتم عبر بوابة آمنة، ولا نحتفظ ببيانات بطاقتك إطلاقًا.",
+      topic: "pricing",
+    },
+    {
+      question: "هل الأسعار شاملة الضريبة؟",
+      answer:
+        "نعم، جميع الأسعار المعروضة شاملة ضريبة القيمة المضافة [١٥٪]. الفاتورة الضريبية تصلك على بريدك الإلكتروني بعد إتمام الطلب، وتقدر تطلبها منّا في أي وقت برقم الطلب.",
+      topic: "pricing",
+    },
+    {
+      question: "عندكم كود خصم أو عروض؟",
+      answer:
+        "العروض الحالية معروضة في قسم [العروض] على المتجر. للحصول على أكواد الخصم أولًا بأول، اشترك في القائمة البريدية أو تابع حسابنا [@الحساب]. أكواد الخصم تُطبَّق في صفحة الدفع قبل تأكيد الطلب.",
+      topic: "pricing",
+    },
+    {
+      question: "متى تردّون على الرسائل؟",
+      answer:
+        "نردّ آليًا على مدار الساعة، وفريقنا البشري متاح من [٩ صباحًا] إلى [٩ مساءً] طوال أيام الأسبوع عدا [الجمعة]. لو كان سؤالك يحتاج موظفًا، نحوّلك له مباشرة وتصلك الإجابة في نفس المحادثة.",
+      topic: "hours",
+    },
+    {
+      question: "هل تشحنون خارج السعودية؟",
+      answer:
+        "[نشحن حاليًا داخل المملكة فقط / نشحن إلى دول الخليج خلال ٥-٧ أيام عمل برسوم تُحسب حسب الوزن والوجهة]. تواصل معنا بوجهتك ونعطيك التكلفة والمدة بالضبط قبل الطلب.",
+      topic: "delivery",
+    },
+    {
+      question: "وين طلبي؟ صار له كم يوم",
+      answer:
+        "أرسل لنا رقم الطلب ونتحقق من حالته فورًا. إذا تجاوز الطلب المدة المتوقعة، نتابع مع شركة الشحن نيابةً عنك ونرجع لك بتحديث — ولا نغلق المحادثة حتى يصلك.",
+      topic: "delivery",
+    },
+  ],
+};
+
 export const INDUSTRY_TEMPLATES: Record<IndustryTemplateKey, IndustryTemplate> = {
+  retail,
   restaurant,
   real_estate: realEstate,
   salon,
