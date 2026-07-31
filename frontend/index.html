@@ -26,11 +26,16 @@
     <link rel="preload" href="/fonts/tajawal-400-arabic.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="/fonts/tajawal-700-arabic.woff2" as="font" type="font/woff2" crossorigin />
 
-    <!-- iOS home-screen app support -->
+    <!-- iOS home-screen app support.
+         apple-touch-icon MUST be a PNG: iOS Safari does not render SVG here,
+         and silently falls back to a screenshot of the page — so the icon on
+         the home screen was a tiny unreadable thumbnail of the dashboard
+         rather than the logo. 180×180 is the size iOS actually wants; it
+         downsamples from there for every other slot. -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="ميسور" />
-    <link rel="apple-touch-icon" href="/icon.svg" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icon-180.png" />
 
     <!-- What a WhatsApp or X share of the site renders. Absolute URLs: a
          relative one resolves against the crawler's own host, not ours. -->
