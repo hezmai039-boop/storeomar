@@ -25,7 +25,7 @@
  * conversation (§7).
  */
 
-export type IndustryTemplateKey = "restaurant" | "real_estate" | "salon" | "retail";
+export type IndustryTemplateKey = "restaurant" | "real_estate" | "salon" | "retail" | "fresh_seafood";
 
 export interface IndustryKnowledgeEntry {
   /** Customer-phrased question — also stored in chunk metadata so the review UI can show it. */
@@ -329,8 +329,125 @@ const retail: IndustryTemplate = {
   ],
 };
 
+// Fresh seafood / daily-catch food. This is NOT a variant of `retail`, and
+// giving a fishmonger the retail template is an active mistake — the two
+// disagree on the answers that matter most:
+//
+//   retail says "return within 14 days, unused, in its original box"
+//   fresh food says "tell us within HOURS, and we cannot resell it either way"
+//
+//   retail says "3–5 business days, tracking number from the courier"
+//   fresh food says "same day / next day, our own refrigerated car, and you
+//   must be home to receive it"
+//
+// A perishable-goods store answering with retail's numbers would be
+// promising a two-week return window on fish. So the questions below are the
+// ones a seafood buyer actually asks before their first order, and the ones
+// that generate the most support load afterwards.
+//
+// The biggest of those is WEIGHT. Fish is priced per kilo *before* cleaning,
+// gutting removes a large fraction of it, and shrimp loses roughly half once
+// the head and shell are off. A customer who ordered "1 kg" and unpacks 550 g
+// of shrimp meat believes they were shorted — this is the single most common
+// dispute in the trade, and answering it up front prevents it. Two separate
+// entries cover it, because customers ask it twice: once before buying
+// ("how much do I order?") and once after ("why is this light?").
+//
+// Same placeholder rule as everywhere else: every real number is a
+// [placeholder]. The delivery window and the return window especially — a
+// wrong return window on perishable food is not a rounding error, it is the
+// store either eating losses it never agreed to or refusing a claim the
+// customer was told they had.
+const freshSeafood: IndustryTemplate = {
+  key: "fresh_seafood",
+  name: "بحريات وأغذية طازجة",
+  sourceTitle: "الأسئلة الشائعة — أسماك وبحريات طازجة",
+  sourceType: "faq",
+  entries: [
+    {
+      question: "متى يوصل طلبي؟",
+      answer:
+        "نوصّل داخل [المدينة] خلال [٢٤] ساعة من تأكيد الطلب. البحريات تُجهَّز خصيصًا بعد الطلب — تُنظَّف وتُغلَّف لك أنت، ثم تُنقل في سيارات مبرّدة، فلا نشحنها مع شركات الشحن العادية. نتواصل معك قبل الوصول لتنسيق وقت الاستلام.",
+      topic: "delivery",
+    },
+    {
+      question: "وش المناطق اللي توصلون لها؟ وكم رسوم التوصيل؟",
+      answer:
+        "نغطي [المدن/الأحياء] برسوم [قيمة] ريال، والطلبات فوق [قيمة] ريال توصيلها مجاني. خارج هذا النطاق لا نضمن سلسلة التبريد، ولذلك لا نوصّل له — الطزاجة عندنا شرط لا خدمة إضافية.",
+      topic: "delivery",
+    },
+    {
+      question: "الوزن المكتوب قبل التنظيف ولا بعده؟",
+      answer:
+        "الوزن المعروض في المتجر هو الوزن **قبل التنظيف**، وهذا هو المتعارف عليه في بيع البحريات. بعد إزالة الأحشاء والقشور ينقص الوزن، ومقدار النقص يختلف حسب النوع. أما الروبيان فيفقد قرابة نصف وزنه بعد نزع الرأس والقشر والذيل — يعني الكيلو يصير تقريبًا [نصف] كيلو لحم صافي. إذا تبي كيلو لحم صافي، اطلب [ضعف] الكمية أو اطلبه كاملًا بدون تنظيف.",
+      topic: "pricing",
+    },
+    {
+      question: "استلمت الطلب ووزنه أقل من اللي طلبته",
+      answer:
+        "الفرق غالبًا سببه التنظيف لا نقص الكمية: نزن قبل التنظيف، وإزالة الأحشاء والرأس والقشر تنقص الوزن فعليًا. أرسل لنا رقم الطلب وصورة للميزان ونراجع الطلب من عندنا فورًا — وإذا طلع الفرق من عندنا نعوّضك عنه كاملًا بدون نقاش.",
+      topic: "general",
+    },
+    {
+      question: "أقدر أطلبه منظّف ومقطّع؟",
+      answer:
+        "نعم، تختار طريقة التنظيف والتقطيع اللي تناسبك عند الطلب: [كامل / منظّف / شرائح / مكعبات]، والروبيان [مقشّر بالكامل / مع الذيل / كامل]. التجهيز يتم في بيئة صحية معقّمة بعد استلام طلبك مباشرة. إذا تبيه بدون تنظيف، أخبرنا **قبل** بدء التجهيز لأنه لا يمكن التراجع بعده.",
+      topic: "general",
+    },
+    {
+      question: "كيف تضمنون وصوله طازج؟",
+      answer:
+        "الطلب يُجهَّز من صيد اليوم بعد طلبك مباشرة، ثم يُغلَّف بإحكام ويوضع في صناديق حافظة للبرودة مغطاة بالثلج، وينتقل في سيارات مبرّدة حتى باب بيتك. علامات الطزاجة اللي تقدر تتأكد منها بنفسك عند الاستلام: عيون صافية لامعة غير غائرة، جسم متماسك يرتد عند الضغط عليه، ورائحة بحر منعشة.",
+      topic: "general",
+    },
+    {
+      question: "إذا وصلني الطلب مو طازج، وش أسوي؟",
+      answer:
+        "تواصل معنا خلال [ساعتين] كحد أقصى من وقت الاستلام مع رقم الطلب وصورة واضحة للمنتج، ونستبدله أو نعيد لك المبلغ. المدة قصيرة لأن البحريات منتج حسّاس جدًا ولا يمكن الحكم على حالته بعد ساعات من الاستلام — وهذا الشرط لحمايتك ولحمايتنا معًا. اتصل أو راسلنا على [رقم خدمة العملاء].",
+      topic: "cancellation",
+    },
+    {
+      question: "أقدر أرجّع الطلب لأني غيّرت رأيي؟",
+      answer:
+        "المنتجات الطازجة تُجهَّز خصيصًا لطلبك وتُنظَّف وتُغلَّف باسمك، ولذلك لا يمكن إرجاعها لمجرد تغيير الرأي — نظام التجارة الإلكترونية السعودي يستثني السلع القابلة للتلف من حق العدول. لكن إذا لم يكن الطلب مطابقًا لمعايير الطزاجة، فحقك محفوظ بالكامل. أما إلغاء الطلب قبل بدء التجهيز فمتاح فورًا؛ راسلنا برقم الطلب.",
+      topic: "cancellation",
+    },
+    {
+      question: "هل النوع اللي أبيه متوفر اليوم؟",
+      answer:
+        "التوفر يعتمد على صيد اليوم ويتغيّر يوميًا — الأنواع الموسمية قد تنقطع لأيام. أرسل لنا اسم النوع والكمية ونؤكد لك توفره الآن قبل ما تكمل الطلب، وإذا كان غير متوفر نرشّح لك أقرب بديل بنفس طريقة الطبخ.",
+      topic: "general",
+    },
+    {
+      question: "لازم أكون موجود وقت التوصيل؟",
+      answer:
+        "نعم — الطلب مبرّد ولا يمكن تركه على الباب. يلتزم العميل بالتواجد في وقت التوصيل المحدد أو تفويض شخص يستلم نيابةً عنه. إذا تعذّر عليك الاستلام أخبرنا مبكرًا ونعيد جدولة التوصيل، لأن رجوع الطلب في السيارة يعني خسارته.",
+      topic: "delivery",
+    },
+    {
+      question: "وش طرق الدفع؟ وهل الأسعار شاملة الضريبة؟",
+      answer:
+        "نستقبل [مدى، البطاقات الائتمانية، Apple Pay، الدفع عند الاستلام]، وجميع المدفوعات تتم عبر بوابة آمنة ولا نطلب بيانات بطاقتك في المحادثة أبدًا. الأسعار المعروضة [شاملة] ضريبة القيمة المضافة، وتصلك الفاتورة بعد إتمام الطلب.",
+      topic: "pricing",
+    },
+    {
+      question: "كيف أحفظه في البيت؟ وكم يبقى صالح؟",
+      answer:
+        "استخدمه في نفس اليوم إن أمكن. للحفظ القصير: ضعه في أبرد جزء من الثلاجة على ثلج ويُستهلك خلال [٢٤] ساعة. للحفظ الأطول: جمّده فورًا بعد الاستلام في أكياس محكمة، ويفضّل تقسيمه لوجبات قبل التجميد لأن إعادة تجميد ما ذاب تفسده. الإذابة تكون في الثلاجة لا في ماء ساخن.",
+      topic: "general",
+    },
+    {
+      question: "متى تردّون على الرسائل؟",
+      answer:
+        "نردّ آليًا على مدار الساعة، وفريقنا متاح من [الساعة] إلى [الساعة] يوميًا. الطلبات المستعجلة وطلبات المناسبات الكبيرة نفضّل التنسيق لها مبكرًا لأن الكميات تعتمد على صيد اليوم.",
+      topic: "hours",
+    },
+  ],
+};
+
 export const INDUSTRY_TEMPLATES: Record<IndustryTemplateKey, IndustryTemplate> = {
   retail,
+  fresh_seafood: freshSeafood,
   restaurant,
   real_estate: realEstate,
   salon,
