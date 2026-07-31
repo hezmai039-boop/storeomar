@@ -36,12 +36,23 @@ export function LogoMark({
   //           same colour).
   const isLight = tone === "light";
   const isMono = tone === "mono";
-  // The ‏م‏ itself: navy inside the white bubble, otherwise the bubble's colour.
-  const shell = isLight ? "#0D2C4D" : isMono ? "currentColor" : "#0D2C4D";
-  const bubbleStroke = isLight ? "none" : isMono ? "currentColor" : "#0D2C4D";
+  // "brand" consumes THEME TOKENS, not hex.
+  //
+  // It used to hard-code #0D2C4D, which made the wordmark and the ‏م‏ measure
+  // 1.06:1 against the dark theme's navy sidebar — invisible, and shipped.
+  // The mistake was treating "brand" as a palette when it is really a
+  // context: "render me in whatever this surface's foreground is". The
+  // tokens already flip correctly (docs/32), the component simply was not
+  // asking them. Now: 13.77:1 on the light sidebar, 11.73:1 on the dark one.
+  //
+  // "light" stays hard-coded on purpose — the landing page is a fixed dark
+  // world that does NOT follow prefers-color-scheme, so a token there would
+  // recolour the mark for every visitor whose OS is in light mode.
+  const shell = isLight ? "#0D2C4D" : isMono ? "currentColor" : "var(--text)";
+  const bubbleStroke = isLight ? "none" : isMono ? "currentColor" : "var(--text)";
   const bubbleFill = isLight ? "#FFFFFF" : "none";
-  const accent = isMono ? "currentColor" : "#FF6A00";
-  const band = isLight ? "#E6ECF2" : isMono ? "currentColor" : "#1E5A8A";
+  const accent = isMono ? "currentColor" : isLight ? "#FF6A00" : "var(--accent)";
+  const band = isLight ? "#E6ECF2" : isMono ? "currentColor" : "var(--primary)";
 
   return (
     <svg
@@ -97,8 +108,12 @@ export function LogoLockup({
   tone?: "brand" | "light" | "mono";
   subtitle?: boolean;
 }) {
-  const nameColor = tone === "light" ? "#FFFFFF" : tone === "mono" ? "currentColor" : "#0D2C4D";
-  const subColor = tone === "light" ? "#FF6A00" : tone === "mono" ? "currentColor" : "#FF6A00";
+  // Same rule as the mark: theme tokens for "brand", fixed hex only for the
+  // landing page's fixed dark world. The descriptor uses --accent-text
+  // rather than --accent because it is ~9px TEXT, and the raw brand orange
+  // is 2.87:1 on a light surface (docs/32).
+  const nameColor = tone === "light" ? "#FFFFFF" : tone === "mono" ? "currentColor" : "var(--text)";
+  const subColor = tone === "light" ? "#FF6A00" : tone === "mono" ? "currentColor" : "var(--accent-text)";
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
       <LogoMark size={size} tone={tone} />
