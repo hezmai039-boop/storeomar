@@ -13,11 +13,19 @@ import { CheckoutInstruction, PaymentProvider } from "./types";
 // Invoices, quotas, subscription extension and the admin review queue all
 // stay exactly as they are.
 
-const DEFAULTS = {
+// Exported so src/scripts/preflight.ts can assert that a deployment has
+// actually replaced them. These are the values a customer is told to wire
+// money to when BILLING_* is unset — a placeholder IBAN that looks entirely
+// plausible on a checkout screen. Nothing at build time can catch that, so
+// the check has to compare against the real constant rather than a second
+// copy of the string that could drift out of sync with this one.
+export const MANUAL_BILLING_DEFAULTS = {
   bankName: "البنك الأهلي السعودي",
   accountName: "منصة ميسور",
   iban: "SA0000000000000000000000",
 };
+
+const DEFAULTS = MANUAL_BILLING_DEFAULTS;
 
 export const manualProvider: PaymentProvider = {
   key: "manual",

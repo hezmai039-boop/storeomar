@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import type { StoreOverview, StoreChannelHealth } from "../api/types";
 import { useAuth } from "../context/AuthContext";
 import { useStore } from "../context/StoreContext";
+import { readChannelError } from "../lib/channelErrors";
 
 // A connected channel is healthy; anything else needs the owner's attention
 // (most often an expired WhatsApp Access Token → rotate in Settings).
@@ -118,8 +119,8 @@ export function OverviewPage() {
             )}
           </div>
           <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>
-            حالة اتصال قنوات كل متجر. أي قناة بحالة «خطأ» غالبًا يعني انتهاء صلاحية Access Token — حدّثها من
-            إعدادات ذلك المتجر.
+            حالة اتصال قنوات كل متجر، مع سبب العطل كما ردّته Meta آخر مرة. اضغط أي صف للانتقال إلى إعدادات ذلك
+            المتجر، حيث زر «فحص القناة» يعيد الفحص مباشرة بلا إرسال أي رسالة لعميل.
           </p>
 
           <div className="card" style={{ overflowX: "auto" }}>
@@ -174,6 +175,21 @@ export function OverviewPage() {
                             </td>
                             <td style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)", fontSize: 13 }}>
                               <span className={`badge ${meta.badge}`}>{meta.label}</span>
+                              {/* The cause, not just the colour. Before
+                                  channel_accounts.last_error existed this
+                                  column could only say "خطأ" and leave the
+                                  owner to guess between an expired token, a
+                                  closed 24h window and a wrong number id. */}
+                              {(() => {
+                                const err = readChannelError(c.lastError);
+                                if (!err) return null;
+                                return (
+                                  <div style={{ marginTop: 6, fontSize: 11.5, color: "var(--text-dim)", lineHeight: 1.7, maxWidth: 460 }}>
+                                    {err.messageAr}
+                                    {err.fixAr && <div style={{ color: "var(--text-faint)" }}>الحل: {err.fixAr}</div>}
+                                  </div>
+                                );
+                              })()}
                             </td>
                           </tr>
                         );

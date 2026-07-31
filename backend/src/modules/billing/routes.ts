@@ -8,7 +8,7 @@ import { authenticate } from "../../middleware/auth";
 import { requireOwner, requireOrgPermission, requirePlatformAdmin } from "../../middleware/rbac";
 import { writeAudit } from "../../lib/audit";
 import { PERMISSIONS } from "../../lib/permissions";
-import { getPaymentProvider } from "./adapters/registry";
+import { getPaymentProvider, DEFAULT_BILLING_PROVIDER } from "./adapters/registry";
 import { currentPeriod, getUsageSummary } from "./service";
 
 export const billingRouter = Router();
@@ -28,8 +28,20 @@ billingRouter.use(authenticate);
 // audit_logs policy explicitly allows for organization-level events, so a
 // plain transaction (no store context to set) is correct here.
 
-/** Which provider new invoices are issued against — see adapters/registry.ts. */
-const BILLING_PROVIDER = process.env.BILLING_PROVIDER || "manual";
+/**
+ * Which provider NEW invoices are issued against — see adapters/registry.ts.
+ *
+ * Defaults to `contact`: the platform does not publish an IBAN in-product;
+ * the owner contacts the customer and passes payment details by hand. Set
+ * BILLING_PROVIDER=manual to go back to showing bank details on the
+ * checkout screen (docs/25-billing-and-plans.md §5).
+ *
+ * Existing invoices are unaffected — every checkout is rebuilt from
+ * `invoice.provider`, the value stored on the row when it was issued, so
+ * flipping this env var never rewrites what an open invoice tells its
+ * customer to do.
+ */
+const BILLING_PROVIDER = process.env.BILLING_PROVIDER || DEFAULT_BILLING_PROVIDER;
 
 /** Invoice states where money has not been confirmed as received yet. */
 const UNPAID_STATUSES = ["pending", "awaiting_review"];

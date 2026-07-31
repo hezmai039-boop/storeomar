@@ -13,6 +13,10 @@ import { encryptSecret, decryptSecret } from "../../lib/crypto";
 import { getAdapter } from "./adapters/registry";
 import { getIdempotentReplay, storeIdempotentResponse } from "../../lib/idempotency";
 import { publish, subscribeSse } from "./realtime";
+import { prisma } from "../../db/prisma";
+import { diagnoseSendError, recordChannelFailure, recordChannelSuccess, recordChannelOutcome } from "./channelHealth";
+import { diagnoseWhatsAppChannel } from "./diagnostics";
+import type { ParsedMetaError } from "./adapters/metaErrors";
 
 export const channelsRouter = Router({ mergeParams: true });
 channelsRouter.use(authenticate, requireStoreAccess());
@@ -89,6 +93,11 @@ const verifySchema = z.object({ testRecipientExternalId: z.string().min(1) });
 
 // POST /v1/stores/:storeId/channel-accounts/:id/verify — sends a real test
 // message through the adapter before the channel is trusted for customers.
+//
+// Needs a recipient, which is exactly its limitation: on a Meta test number
+// the recipient must itself be allow-listed, so a failure here is ambiguous
+// between "the token died" and "this recipient is not allowed" — two
+// opposite problems. /diagnose below answers that without a recipient.
 channelsRouter.post(
   "/channel-accounts/:id/verify",
   requirePermission(PERMISSIONS.CHANNELS_MANAGE),
@@ -106,14 +115,116 @@ channelsRouter.post(
           toExternalId: body.testRecipientExternalId,
           text: "رسالة اختبار من منصة ميسور — القناة متصلة بنجاح.",
         });
-        return tx.channelAccount.update({ where: { id: account.id }, data: { status: "connected" } });
+        await recordChannelSuccess(tx, account.id);
+        return tx.channelAccount.findFirstOrThrow({ where: { id: account.id } });
       } catch (err) {
-        await tx.channelAccount.update({ where: { id: account.id }, data: { status: "error" } });
-        throw ApiError.badRequest(`فشل اختبار القناة: ${(err as Error).message}`);
+        // `err.message` used to be interpolated straight into this response,
+        // which shipped Meta's raw English body — phone number ids, WABA
+        // ids, fbtrace — to whoever pressed the button. The parsed Arabic
+        // cause goes in the response; the raw body stays in the log.
+        const parsed = diagnoseSendError(err);
+        await recordChannelFailure(tx, account.id, parsed);
+        throw ApiError.badRequest(`فشل اختبار القناة: ${parsed.titleAr} — ${parsed.detailAr}`, {
+          reason: parsed.reason,
+          fix: parsed.fixAr,
+        });
       }
     });
     const { credentialsEncrypted, ...safe } = result;
     res.json({ data: safe });
+  })
+);
+
+// POST /v1/stores/:storeId/channel-accounts/:id/diagnose — «فحص القناة».
+//
+// The real diagnostic: no recipient, no message sent, read-only Graph calls
+// that name ONE cause out of the five that make a WhatsApp channel go
+// quiet (docs/22 §"تشخيص الأعطال"). It also writes what it learns back to
+// the channel row, so the owner's «صحة القنوات» table stops lying the
+// moment someone presses the button.
+channelsRouter.post(
+  "/channel-accounts/:id/diagnose",
+  requirePermission(PERMISSIONS.CHANNELS_MANAGE),
+  asyncHandler(async (req, res) => {
+    // Meta's raw error text is shown to platform staff only — it carries
+    // internal identifiers, and the merchant has no use for it anyway.
+    const staff = await prisma.user.findUnique({
+      where: { id: req.auth!.userId },
+      select: { isPlatformAdmin: true },
+    });
+
+    const account = await withStoreContext(req.storeAccess!.accessibleStoreIds, (tx) =>
+      tx.channelAccount.findFirstOrThrow({
+        where: { id: req.params.id, storeId: req.storeAccess!.storeId },
+        include: { channelType: true },
+      })
+    );
+    if (account.channelType.key !== "whatsapp") {
+      throw ApiError.badRequest("الفحص التشخيصي متاح حاليًا لقناة واتساب فقط.");
+    }
+
+    const credentials = JSON.parse(decryptSecret(account.credentialsEncrypted)) as {
+      phoneNumberId?: string;
+      accessToken?: string;
+    };
+    if (!credentials.phoneNumberId || !credentials.accessToken) {
+      throw ApiError.badRequest(
+        "بيانات اعتماد القناة ناقصة: يلزم Phone Number ID وAccess Token. حدّثهما من «تحديث بيانات الاعتماد»."
+      );
+    }
+
+    // "Did anything ever arrive?" — the one check that separates a dead
+    // token from a webhook that never reaches us (cause #4).
+    const lastInbound = await withStoreContext(req.storeAccess!.accessibleStoreIds, (tx) =>
+      tx.message.findFirst({
+        where: {
+          storeId: req.storeAccess!.storeId,
+          senderType: "customer",
+          conversation: { channelAccountId: account.id },
+        },
+        orderBy: { createdAt: "desc" },
+        select: { createdAt: true },
+      })
+    );
+
+    // Network calls with no transaction open (same discipline as the AI
+    // pipeline in webhook.ts): Graph latency must not hold a DB connection.
+    const diagnosis = await diagnoseWhatsAppChannel({
+      credentials: { phoneNumberId: credentials.phoneNumberId, accessToken: credentials.accessToken },
+      storedLastError: account.lastError,
+      storedLastErrorAt: account.lastErrorAt,
+      lastInboundAt: lastInbound?.createdAt ?? null,
+      includeStaffDetail: Boolean(staff?.isPlatformAdmin),
+    });
+
+    // Persist what the check learned: a diagnosis that does not change the
+    // status column leaves the owner's overview exactly as wrong as before.
+    const updated = await withStoreContext(req.storeAccess!.accessibleStoreIds, async (tx) => {
+      const tokenBroken = diagnosis.checks.some((c) => c.key === "token" && c.status === "fail");
+      if (tokenBroken && diagnosis.reason) {
+        await tx.channelAccount.update({
+          where: { id: account.id },
+          data: {
+            status: "error",
+            lastError: `[${diagnosis.reason}] ${diagnosis.checks.find((c) => c.key === "token")!.detail}`,
+            lastErrorAt: new Date(),
+            ...(diagnosis.tokenExpiresAt ? { tokenExpiresAt: new Date(diagnosis.tokenExpiresAt) } : {}),
+          },
+        });
+      } else if (diagnosis.healthy) {
+        await recordChannelSuccess(tx, account.id);
+        if (diagnosis.tokenExpiresAt) {
+          await tx.channelAccount.update({
+            where: { id: account.id },
+            data: { tokenExpiresAt: new Date(diagnosis.tokenExpiresAt) },
+          });
+        }
+      }
+      return tx.channelAccount.findFirstOrThrow({ where: { id: account.id }, include: { channelType: true } });
+    });
+
+    const { credentialsEncrypted, ...safeAccount } = updated;
+    res.json({ data: { diagnosis, channel: safeAccount } });
   })
 );
 
@@ -240,6 +351,10 @@ channelsRouter.post(
     if (replay) return res.status(replay.status).json(replay.body);
 
     const body = replySchema.parse(req.body);
+    // Held outside the transaction on purpose: a failed send aborts the
+    // transaction, so the channel's health has to be written afterwards, on
+    // its own connection, or it would roll back with everything else.
+    const failureBox: { value: { channelAccountId: string; parsed: ParsedMetaError } | null } = { value: null };
     const result = await withStoreContext(req.storeAccess!.accessibleStoreIds, async (tx) => {
       const conversation = await tx.conversation.findFirstOrThrow({
         where: { id: req.params.id, storeId: req.storeAccess!.storeId },
@@ -248,10 +363,23 @@ channelsRouter.post(
 
       const adapter = getAdapter(conversation.channelAccount.channelType.adapterKey);
       const credentials = JSON.parse(decryptSecret(conversation.channelAccount.credentialsEncrypted));
-      const sent = await adapter.sendMessage(credentials, {
-        toExternalId: conversation.customer.externalId,
-        text: body.text,
-      });
+      let sent: { externalMessageId: string };
+      try {
+        sent = await adapter.sendMessage(credentials, {
+          toExternalId: conversation.customer.externalId,
+          text: body.text,
+        });
+      } catch (err) {
+        const parsed = diagnoseSendError(err);
+        failureBox.value = { channelAccountId: conversation.channelAccount.id, parsed };
+        // Arabic and parsed — never Meta's raw body, which used to travel
+        // out of the adapter inside err.message.
+        throw ApiError.badRequest(`تعذّر إرسال الرد عبر القناة: ${parsed.titleAr} — ${parsed.detailAr}`, {
+          reason: parsed.reason,
+          fix: parsed.fixAr,
+        });
+      }
+      await recordChannelSuccess(tx, conversation.channelAccount.id);
 
       const message = await tx.message.create({
         data: {
@@ -287,6 +415,16 @@ channelsRouter.post(
       }
 
       return message;
+    }).catch(async (err) => {
+      // The send failed and took the transaction with it — so the channel's
+      // health is recorded here, outside it, before the error surfaces.
+      if (failureBox.value) {
+        await recordChannelOutcome(req.storeAccess!.storeId, failureBox.value.channelAccountId, {
+          ok: false,
+          parsed: failureBox.value.parsed,
+        });
+      }
+      throw err;
     });
 
     publish(req.storeAccess!.storeId, { type: "message.created", conversationId: req.params.id, messageId: result.id });

@@ -173,6 +173,12 @@ analyticsRouter.get(
             status: true,
             externalAccountId: true,
             connectedAt: true,
+            // The reason, not just the colour: a red row that cannot say
+            // WHY sends the owner back to guessing. Written by
+            // channelHealth.ts as `[reason] عربي` — never Meta's raw body.
+            lastError: true,
+            lastErrorAt: true,
+            tokenExpiresAt: true,
             channelType: { select: { key: true } },
           },
         }),
@@ -187,6 +193,9 @@ analyticsRouter.get(
         status: r.status,
         externalAccountId: r.externalAccountId,
         connectedAt: r.connectedAt,
+        lastError: r.lastError,
+        lastErrorAt: r.lastErrorAt,
+        tokenExpiresAt: r.tokenExpiresAt,
       });
     }
     res.json({ data: { stores: Array.from(byStore.values()) } });

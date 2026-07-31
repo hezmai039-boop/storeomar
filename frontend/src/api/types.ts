@@ -87,6 +87,38 @@ export interface ChannelAccount {
   displayName: string;
   status: string;
   channelType: ChannelTypeRef;
+  // Why the channel is not working, encoded as `[reason] عربي` by the
+  // backend (channelHealth.ts). Never Meta's raw body.
+  lastError: string | null;
+  lastErrorAt: string | null;
+  tokenExpiresAt: string | null;
+}
+
+// «فحص القناة» — POST /channel-accounts/:id/diagnose
+export interface DiagnosticCheck {
+  key: string;
+  label: string;
+  status: "ok" | "warn" | "fail";
+  detail: string;
+  fix?: string;
+}
+
+export interface ChannelDiagnosis {
+  checkedAt: string;
+  healthy: boolean;
+  reason: string | null;
+  checks: DiagnosticCheck[];
+  number: {
+    displayPhoneNumber: string | null;
+    verifiedName: string | null;
+    nameStatusAr: string | null;
+    verificationAr: string | null;
+    qualityAr: string | null;
+  } | null;
+  webhook: { callbackUrl: string; verifyTokenConfigured: boolean };
+  tokenExpiresAt: string | null;
+  // Platform staff only — absent for merchants.
+  staffOnly?: { rawMetaError: string; httpStatus: number; code: number | null; subcode: number | null; fbtraceId: string | null };
 }
 
 export interface Integration {
@@ -112,6 +144,9 @@ export interface ChannelHealthEntry {
   status: string;
   externalAccountId: string;
   connectedAt: string | null;
+  lastError: string | null;
+  lastErrorAt: string | null;
+  tokenExpiresAt: string | null;
 }
 
 export interface StoreChannelHealth {
@@ -149,7 +184,15 @@ export interface SimulationLink {
 
 export interface Plan {
   id: string;
-  key: "free" | "basic" | "pro";
+  // A plain string, not a union of the seeded keys. The catalogue is DATA —
+  // prisma/seed-reference.ts now derives `basic_yearly` / `growth_yearly` /
+  // `business_yearly` from their monthly twins, and a union here would have to
+  // be edited every time a tier or a billing cycle is added, which makes this
+  // file the thing that rejects a row the API happily returned. The `pro` →
+  // `growth` + `business` restructure is exactly that edit, and it cost this
+  // file nothing. Only "free" is special-cased anywhere, and that is enforced
+  // in the backend.
+  key: string;
   name: string;
   nameEn: string;
   priceHalalas: number;
@@ -226,11 +269,30 @@ export interface TransferInstructions {
   note: string;
 }
 
-export interface CheckoutInstruction {
-  kind: "offline_transfer" | "redirect";
-  instructions?: TransferInstructions;
-  redirectUrl?: string;
+/**
+ * The `contact` provider (the default): no bank details are published in
+ * the product at all. The customer gets an invoice number to quote and a
+ * way to reach a human, and the team arranges payment person to person.
+ *
+ * Mirrors ContactCheckout in backend/src/modules/billing/adapters/types.ts.
+ */
+export interface ContactInstructions {
+  reference: string;
+  /** Digits only, international format, no `+`. */
+  whatsappNumber: string;
+  whatsappUrl: string;
+  note: string;
 }
+
+/**
+ * Discriminated on `kind` — same union as the backend. Each variant carries
+ * only its own fields, so a `contact` checkout has no `instructions` to
+ * render an empty bank block from.
+ */
+export type CheckoutInstruction =
+  | { kind: "offline_transfer"; instructions: TransferInstructions }
+  | { kind: "contact"; contact: ContactInstructions }
+  | { kind: "redirect"; redirectUrl: string };
 
 export interface SubscribeResult {
   subscription: Subscription;
