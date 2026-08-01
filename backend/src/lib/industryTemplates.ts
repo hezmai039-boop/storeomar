@@ -457,7 +457,20 @@ export function listIndustryTemplates(): IndustryTemplate[] {
   return Object.values(INDUSTRY_TEMPLATES);
 }
 
+/**
+ * Looks a template up by key, for a key that arrives from a URL.
+ *
+ * The `hasOwn` guard is NOT defensive padding. `INDUSTRY_TEMPLATES` is an
+ * ordinary object literal, so a plain index lookup walks the prototype chain:
+ * `INDUSTRY_TEMPLATES["__proto__"]` returns an object and
+ * `INDUSTRY_TEMPLATES["constructor"]` returns a function — both TRUTHY. The
+ * apply route reads `template.entries.map(...)` right after its `if
+ * (!template) 404`, so those keys sailed past the 404 and crashed on an
+ * undefined `.entries` — a 500 that reads like an outage, from a URL any
+ * authenticated manager can type.
+ */
 export function getIndustryTemplate(key: string): IndustryTemplate | undefined {
+  if (!Object.hasOwn(INDUSTRY_TEMPLATES, key)) return undefined;
   return INDUSTRY_TEMPLATES[key as IndustryTemplateKey];
 }
 

@@ -19,6 +19,13 @@ import {
   getStorageProvider,
   storageKeyPrefix,
 } from "../../lib/storage/registry";
+import {
+  getIndustryTemplate,
+  listIndustryTemplates,
+  templateChunkContent,
+  templateChunkMetadata,
+  templateRawText,
+} from "../../lib/industryTemplates";
 
 export const knowledgeRouter = Router({ mergeParams: true });
 knowledgeRouter.use(authenticate, requireStoreAccess());
@@ -212,6 +219,245 @@ knowledgeRouter.post(
       return source;
     });
     res.status(201).json({ data: created });
+  })
+);
+
+// ---------------------------------------------------------------------------
+// Starter templates — the cold-start fix.
+//
+// An empty knowledge base escalates every single question to a human
+// (retrieval.ts), so a merchant who connects a channel and watches the AI
+// answer nothing concludes the product is broken. These two routes are how a
+// store gets a plausible knowledge base in one click and then edits it.
+// ---------------------------------------------------------------------------
+
+// GET /v1/stores/:storeId/knowledge/templates
+//
+// Returns the template CATALOGUE, not the entries — the picker only needs to
+// render a name and a size, and shipping every answer of every template on a
+// screen that shows four cards is payload nobody reads.
+knowledgeRouter.get(
+  "/templates",
+  requirePermission(PERMISSIONS.KNOWLEDGE_VIEW),
+  asyncHandler(async (_req, res) => {
+    res.json({
+      data: listIndustryTemplates().map((t) => ({
+        key: t.key,
+        name: t.name,
+        sourceTitle: t.sourceTitle,
+        entryCount: t.entries.length,
+      })),
+    });
+  })
+);
+
+// GET /v1/stores/:storeId/knowledge/templates/:key — the full entries, so the
+// merchant can read what they are about to attach BEFORE it starts answering
+// their customers. Attaching content sight-unseen is how a store ends up
+// telling buyers something its owner never said.
+knowledgeRouter.get(
+  "/templates/:key",
+  requirePermission(PERMISSIONS.KNOWLEDGE_VIEW),
+  asyncHandler(async (req, res) => {
+    const template = getIndustryTemplate(req.params.key);
+    if (!template) throw ApiError.notFound("القالب");
+    res.json({ data: template });
+  })
+);
+
+// POST /v1/stores/:storeId/knowledge/templates/:key/apply
+//
+// Writes ONE CHUNK PER Q&A PAIR rather than running the template's text
+// through chunkText(). That is deliberate and it is better: the template
+// already knows where its own entries begin and end, while chunkText() would
+// split any answer containing ". " mid-thought and orphan the tail from its
+// question. rawText still holds the whole document so a human can read and
+// re-paste it, but the CHUNKS are the ground truth for retrieval.
+knowledgeRouter.post(
+  "/templates/:key/apply",
+  requirePermission(PERMISSIONS.KNOWLEDGE_MANAGE),
+  asyncHandler(async (req, res) => {
+    const template = getIndustryTemplate(req.params.key);
+    if (!template) throw ApiError.notFound("القالب");
+
+    const created = await withStoreContext(req.storeAccess!.accessibleStoreIds, async (tx) => {
+      // Applying the same template twice would duplicate every answer in the
+      // index — and duplicate chunks do not merely waste space, they crowd the
+      // retriever's top-k with copies of one another and push genuinely
+      // relevant content out of the context window. A merchant who clicks the
+      // button again (because they forgot, or because the first click's
+      // response was lost) must not silently degrade their own AI.
+      const existing = await tx.knowledgeSource.findFirst({
+        where: {
+          storeId: req.storeAccess!.storeId,
+          title: template.sourceTitle,
+          status: { not: "archived" },
+        },
+        select: { id: true },
+      });
+      if (existing) {
+        throw new ApiError(
+          409,
+          "TEMPLATE_ALREADY_APPLIED",
+          "هذا القالب مُطبَّق على المتجر بالفعل — عدّل مصدره الحالي بدل إضافته مرة أخرى"
+        );
+      }
+
+      const source = await tx.knowledgeSource.create({
+        data: {
+          storeId: req.storeAccess!.storeId,
+          type: template.sourceType,
+          title: template.sourceTitle,
+          rawText: templateRawText(template),
+          status: "active",
+          createdBy: req.auth!.userId,
+        },
+      });
+      await tx.knowledgeChunk.createMany({
+        data: template.entries.map((entry) => ({
+          storeId: req.storeAccess!.storeId,
+          sourceId: source.id,
+          content: templateChunkContent(entry),
+          metadata: templateChunkMetadata(template, entry) as unknown as Prisma.InputJsonValue,
+        })),
+      });
+      await writeAudit(tx, {
+        organizationId: req.auth!.organizationId,
+        storeId: req.storeAccess!.storeId,
+        actorUserId: req.auth!.userId,
+        action: "knowledge.template.applied",
+        entityType: "knowledge_source",
+        entityId: source.id,
+        after: { template: template.key, entryCount: template.entries.length },
+      });
+      return source;
+    });
+
+    res.status(201).json({ data: created });
+  })
+);
+
+const entrySchema = z.object({
+  question: z.string().trim().min(1, "اكتب السؤال كما يسأله العميل"),
+  answer: z.string().trim().min(1, "اكتب الإجابة التي يُسمح للذكاء الاصطناعي بقولها"),
+});
+
+// POST /v1/stores/:storeId/knowledge/sources/:id/entries
+//
+// Adds ONE question and answer to an existing source. This exists because the
+// alternative — the only thing the product could do before — was to delete the
+// source and re-paste the whole document to change one line. That is not a
+// convenience gap: re-pasting means the store's AI is answering from an EMPTY
+// knowledge base for however long the edit takes, and every question in that
+// window escalates to a human. Appending never takes the store offline.
+knowledgeRouter.post(
+  "/sources/:id/entries",
+  requirePermission(PERMISSIONS.KNOWLEDGE_MANAGE),
+  asyncHandler(async (req, res) => {
+    const body = entrySchema.parse(req.body);
+    const content = `س: ${body.question}\nج: ${body.answer}`;
+
+    const chunk = await withStoreContext(req.storeAccess!.accessibleStoreIds, async (tx) => {
+      const source = await tx.knowledgeSource.findFirst({
+        where: { id: req.params.id, storeId: req.storeAccess!.storeId },
+      });
+      if (!source) throw ApiError.notFound("المصدر");
+      // An archived source has had all its chunks deleted and is invisible in
+      // the UI. Appending to one would write an entry the merchant can never
+      // see and the AI would still answer from — the worst of both.
+      if (source.status === "archived") {
+        throw ApiError.badRequest("هذا المصدر محذوف — أضف السؤال إلى مصدر نشط");
+      }
+
+      const created = await tx.knowledgeChunk.create({
+        data: {
+          storeId: req.storeAccess!.storeId,
+          sourceId: source.id,
+          content,
+          metadata: { origin: "manual_entry", question: body.question } as Prisma.InputJsonValue,
+        },
+      });
+      // rawText is kept in step with the chunks on purpose. It is what a human
+      // reads and re-pastes, and letting it drift behind the index means the
+      // document a merchant reviews is not the one their customers are being
+      // answered from.
+      //
+      // The blank-line separator matches how the template writes its document,
+      // but note the two are NOT interchangeable: re-running chunkText() over
+      // this rawText would NOT reproduce these chunks. It splits after any
+      // ".", "!" or "؟" followed by a space, so a three-sentence answer
+      // becomes three chunks and the last two lose the question that gave them
+      // their meaning (measured: the 13-entry seafood template shatters into
+      // 38). One chunk per Q&A is the ground truth for retrieval; rawText is
+      // the human-readable copy. Anything that "simplifies" this by
+      // re-indexing from rawText will silently degrade every answer.
+      await tx.knowledgeSource.update({
+        where: { id: source.id },
+        data: { rawText: source.rawText ? `${source.rawText}\n\n${content}` : content },
+      });
+      await writeAudit(tx, {
+        organizationId: req.auth!.organizationId,
+        storeId: req.storeAccess!.storeId,
+        actorUserId: req.auth!.userId,
+        action: "knowledge.entry.added",
+        entityType: "knowledge_source",
+        entityId: source.id,
+        after: { question: body.question },
+      });
+      return created;
+    });
+
+    res.status(201).json({ data: chunk });
+  })
+);
+
+// GET /v1/stores/:storeId/knowledge/sources/:id/entries — the chunks of one
+// source, so the merchant can see what they have already taught the AI before
+// adding a near-duplicate of it.
+knowledgeRouter.get(
+  "/sources/:id/entries",
+  requirePermission(PERMISSIONS.KNOWLEDGE_VIEW),
+  asyncHandler(async (req, res) => {
+    const rows = await withStoreContext(req.storeAccess!.accessibleStoreIds, (tx) =>
+      tx.knowledgeChunk.findMany({
+        where: { sourceId: req.params.id, storeId: req.storeAccess!.storeId },
+        select: { id: true, content: true, metadata: true, createdAt: true },
+        orderBy: { createdAt: "asc" },
+      })
+    );
+    res.json({ data: rows });
+  })
+);
+
+// DELETE /v1/stores/:storeId/knowledge/sources/:id/entries/:chunkId — remove a
+// single wrong answer without dismantling the source around it.
+//
+// rawText is deliberately NOT rewritten here. Excising the matching passage
+// from a free-text document by string surgery is guesswork the moment the same
+// text appears twice, and a bad guess corrupts the document a merchant would
+// later re-paste. The chunk is what answers customers, so deleting the chunk
+// is what stops the wrong answer; rawText keeps the full history of what was
+// once taught, which is the more useful of the two to be wrong about.
+knowledgeRouter.delete(
+  "/sources/:id/entries/:chunkId",
+  requirePermission(PERMISSIONS.KNOWLEDGE_MANAGE),
+  asyncHandler(async (req, res) => {
+    await withStoreContext(req.storeAccess!.accessibleStoreIds, async (tx) => {
+      const deleted = await tx.knowledgeChunk.deleteMany({
+        where: { id: req.params.chunkId, sourceId: req.params.id, storeId: req.storeAccess!.storeId },
+      });
+      if (deleted.count === 0) throw ApiError.notFound("السؤال");
+      await writeAudit(tx, {
+        organizationId: req.auth!.organizationId,
+        storeId: req.storeAccess!.storeId,
+        actorUserId: req.auth!.userId,
+        action: "knowledge.entry.removed",
+        entityType: "knowledge_source",
+        entityId: req.params.id,
+        after: { chunkId: req.params.chunkId },
+      });
+    });
+    res.status(204).send();
   })
 );
 

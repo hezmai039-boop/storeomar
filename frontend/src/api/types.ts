@@ -75,6 +75,26 @@ export interface KnowledgeSource {
   _count?: { chunks: number };
 }
 
+/** One entry of a starter template, as listed by GET knowledge/templates. */
+export interface KnowledgeTemplate {
+  key: string;
+  name: string;
+  sourceTitle: string;
+  entryCount: number;
+}
+
+/**
+ * One indexed passage. `content` is the "س: …\nج: …" shape the retriever
+ * scores, which is why the UI splits on the first newline to render it as a
+ * question and an answer rather than showing the raw prefixes.
+ */
+export interface KnowledgeEntry {
+  id: string;
+  content: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+}
+
 export interface Ticket {
   id: string;
   status: string;
