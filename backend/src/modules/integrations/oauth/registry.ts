@@ -13,6 +13,15 @@ const providers: Record<string, OAuthProvider> = {
 };
 
 export function getOAuthProvider(platform: string): OAuthProvider | undefined {
+  // `hasOwn` before the index, for the same reason as
+  // lib/industryTemplates.ts: `providers` is an object literal, so a bare
+  // lookup walks the prototype chain and `providers["__proto__"]` returns an
+  // object while `providers["constructor"]` returns a function — both TRUTHY,
+  // both sailing past every `if (!provider)` guard below and then throwing
+  // `provider.isConfigured is not a function`. `:platform` is user-supplied
+  // in both call sites, one of which is a PUBLIC callback, so the difference
+  // is a clean 404 versus a 500 anyone can trigger from a URL bar.
+  if (!Object.hasOwn(providers, platform)) return undefined;
   return providers[platform];
 }
 

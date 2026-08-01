@@ -145,3 +145,27 @@ test("asSeconds accepts Zid's string expires_in as well as Salla's number", () =
   assert.equal(asSeconds("not-a-number"), undefined);
   assert.equal(asSeconds(0), undefined);
 });
+
+// --- provider lookup --------------------------------------------------------
+
+test("an inherited Object property is not mistaken for a provider", () => {
+  // `:platform` reaches getOAuthProvider straight from the URL, and one of
+  // the two call sites is the PUBLIC OAuth callback. A bare index lookup on
+  // an object literal walks the prototype chain, so these keys used to come
+  // back TRUTHY, pass `if (!provider) return fail(...)`, and then throw
+  // `provider.isConfigured is not a function` — a 500 anyone could trigger by
+  // typing a URL, on the route that handles merchant credentials.
+  for (const key of ["__proto__", "constructor", "toString", "valueOf", "hasOwnProperty"]) {
+    assert.equal(getOAuthProvider(key), undefined, `${key} leaked through the registry`);
+  }
+});
+
+test("the real providers still resolve, and an unknown platform is undefined not a throw", () => {
+  // Undefined rather than an exception is load-bearing: the callback answers
+  // an unknown platform with a redirect, and a throw there would log a stack
+  // trace on demand for any passer-by.
+  for (const key of oauthPlatformKeys()) {
+    assert.equal(getOAuthProvider(key)?.key, key);
+  }
+  assert.equal(getOAuthProvider("not_a_platform"), undefined);
+});
