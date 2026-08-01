@@ -20,9 +20,10 @@ const accountWithStore = Prisma.validator<Prisma.ChannelAccountDefaultArgs>()({
 });
 type AccountWithStore = Prisma.ChannelAccountGetPayload<typeof accountWithStore>;
 
-// Meta-style app secrets are per app (shared across every connected page/
-// WABA of that type), not per channel_account — unlike the account's own
-// OAuth token, which IS per-account and lives encrypted in the DB.
+// Fallback app secrets, used when a channel_account does not carry its own.
+// These are correct for the "one Meta app, many connected numbers" topology
+// — the merchant grants our Business access to their WABA, the subscription
+// lives on OUR app, so Meta signs every delivery with OUR secret.
 const APP_SECRETS: Record<string, string> = {
   whatsapp: process.env.WHATSAPP_APP_SECRET ?? "",
   instagram: process.env.META_APP_SECRET ?? "",
@@ -30,6 +31,46 @@ const APP_SECRETS: Record<string, string> = {
   tiktok: process.env.TIKTOK_APP_SECRET ?? "",
   mock: process.env.MOCK_APP_SECRET ?? "dev-only-mock-secret",
 };
+
+/**
+ * The app secret to verify THIS account's deliveries with.
+ *
+ * There are two legitimate Meta topologies and a merchant-facing product has
+ * to support both, because which one applies is the merchant's decision and
+ * not ours:
+ *
+ *   shared app   — the merchant shares their WABA with our Business. The
+ *                  webhook subscription sits on our app, so Meta signs with
+ *                  the env secret. This is what the env vars above cover.
+ *
+ *   own app      — the merchant creates their own Meta app and points its
+ *                  webhook at us. Meta then signs with THEIR app secret, and
+ *                  a global env secret can never match it. Before this
+ *                  function existed, every such delivery failed the HMAC and
+ *                  was answered 401: the merchant could SEND fine (sending
+ *                  only needs the phone number id + token) but never
+ *                  RECEIVE, and nothing in the logs said why.
+ *
+ * The per-account secret rides inside `credentials_encrypted` alongside the
+ * access token, so supporting it needs no migration and no new column — and
+ * it inherits that blob's encryption rather than inventing a second place
+ * for a secret to live.
+ *
+ * Falls back to the env secret when absent, so every already-connected
+ * account keeps verifying exactly as it did before.
+ */
+function appSecretFor(account: { credentialsEncrypted: Buffer }, channelKey: string): string {
+  const fallback = APP_SECRETS[channelKey] ?? "";
+  try {
+    const creds = JSON.parse(decryptSecret(account.credentialsEncrypted)) as { appSecret?: unknown };
+    return typeof creds.appSecret === "string" && creds.appSecret.length > 0 ? creds.appSecret : fallback;
+  } catch {
+    // A credential blob we cannot decrypt is a real incident (usually a
+    // rotated ENCRYPTION_KEY), but it must not become an open door: fall
+    // back to the env secret, which then fails the HMAC closed.
+    return fallback;
+  }
+}
 
 // Shared by both the legacy per-account routes and the app-level WhatsApp
 // routes below — everything from "we know which channel_account this
@@ -246,13 +287,28 @@ webhooksRouter.post(
     const rawBody = req.body as Buffer;
     const adapter = getAdapter("whatsapp-cloud-api");
     const signature = req.header("x-hub-signature-256") as string | undefined;
-    const appSecret = APP_SECRETS.whatsapp;
 
-    if (!adapter.verifyWebhookSignature(rawBody, signature, appSecret)) {
-      return res.sendStatus(401);
+    // ORDER: parse → resolve account → verify → act.
+    //
+    // The signature cannot be checked first here, because WHICH secret is
+    // correct depends on which merchant the delivery belongs to (see
+    // appSecretFor), and that is only knowable after reading the phone
+    // number id out of the body. So the body is parsed before it is trusted.
+    //
+    // What makes that safe is what happens in between: parsing is pure, the
+    // only thing done with the untrusted value is one indexed read-only
+    // lookup, the route is rate-limited, and NOTHING is written and no
+    // message is processed until the HMAC passes. An unsigned request can
+    // therefore cost a lookup and nothing else — it can never create a
+    // conversation, spend AI quota, or send a reply.
+    let payload: { entry?: WhatsAppEntry[] };
+    try {
+      payload = JSON.parse(rawBody.toString("utf8")) as { entry?: WhatsAppEntry[] };
+    } catch {
+      // Unparseable bodies reach this route now that parsing precedes
+      // verification. 400, not an uncaught throw that would surface as a 500.
+      return res.sendStatus(400);
     }
-
-    const payload = JSON.parse(rawBody.toString("utf8")) as { entry?: WhatsAppEntry[] };
 
     // A single delivery can (rarely) batch changes for more than one phone
     // number, so route per-change rather than assuming the whole payload
@@ -268,6 +324,15 @@ webhooksRouter.post(
         });
         if (!account) {
           console.error(`[webhook whatsapp] no channel_account for phone_number_id=${phoneNumberId}`);
+          continue;
+        }
+
+        // Verified per change, with THIS merchant's secret. Rejecting the
+        // whole delivery on the first bad change would let one merchant's
+        // misconfigured app silently drop another merchant's messages in the
+        // same batch.
+        if (!adapter.verifyWebhookSignature(rawBody, signature, appSecretFor(account, "whatsapp"))) {
+          console.error(`[webhook whatsapp] signature rejected for phone_number_id=${phoneNumberId}`);
           continue;
         }
 
@@ -323,7 +388,10 @@ webhooksRouter.post(
     const adapter = getAdapter(account.channelType.adapterKey);
     const signature =
       (req.header("x-hub-signature-256") as string | undefined) ?? (req.header("x-tiktok-signature") as string | undefined);
-    const appSecret = APP_SECRETS[channelTypeKey] ?? "";
+    // Per-account secret first, env fallback second — this route already
+    // resolved the account from the URL, so the merchant's own app secret is
+    // available with no reordering needed.
+    const appSecret = appSecretFor(account, channelTypeKey);
 
     const signatureOk = adapter.verifyWebhookSignature(rawBody, signature, appSecret);
     if (!signatureOk) {
