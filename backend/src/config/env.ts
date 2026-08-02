@@ -1,4 +1,8 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+import path from "path";
+
+// Load .env from backend directory
+dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
 function required(name: string, fallback?: string): string {
   const v = process.env[name] ?? fallback;
