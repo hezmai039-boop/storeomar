@@ -2,7 +2,7 @@ import { ChannelAdapter, NormalizedInboundMessage } from "./types";
 import { verifyMetaSignature } from "./metaSignature";
 import { MetaApiError, localFailure, parseMetaError, ParsedMetaError } from "./metaErrors";
 
-export const GRAPH_API_VERSION = "v20.0";
+export const GRAPH_API_VERSION = "v23.0";
 const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
 
 export interface WhatsAppCredentials {

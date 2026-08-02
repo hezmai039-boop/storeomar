@@ -45,6 +45,22 @@ const CHANNEL_TYPES: Array<{ key: string; label: string; fields: CredentialField
   { key: "mock", label: "قناة تجريبية (بدون حساب حقيقي)", fields: [] },
 ];
 
+// Arabic titles for the OAuth/Embedded-Signup callback error codes the
+// backend redirects back with (?error=…). A raw machine code in the red box
+// tells the merchant nothing actionable.
+const OAUTH_ERROR_AR: Record<string, string> = {
+  access_denied: "تم إلغاء العملية من داخل نافذة الربط — لم يتغير شيء",
+  missing_code: "لم تصل بيانات التفويض من المنصة — أعد المحاولة",
+  invalid_state: "انتهت صلاحية جلسة الربط أو استُخدمت من قبل — ابدأ الربط من جديد",
+  exchange_failed: "فشل التحقق من رمز التفويض لدى المنصة — أعد المحاولة",
+  no_waba_shared: "لم تتم مشاركة أي حساب واتساب أعمال خلال المعالج — أعد المحاولة واختر الحساب",
+  no_phone_number: "الحساب المُشارك لا يحتوي أي رقم هاتف — أضف رقمًا في لوحة واتساب للأعمال ثم أعد الربط",
+  discovery_failed: "تعذرت قراءة بيانات الحساب من المنصة — أعد المحاولة أو تواصل مع الدعم",
+  persist_failed: "تم الربط لدى المنصة لكن تعذر الحفظ عندنا — تواصل مع الدعم",
+  whatsapp_not_configured: "ربط واتساب التلقائي غير مفعّل في هذا التثبيت — تواصل مع الدعم",
+  unknown_platform: "منصة غير معروفة",
+};
+
 // Same vocabulary as the owner's «صحة القنوات» table on /overview — a raw
 // English `status` in one place and Arabic in the other reads as two
 // different systems.
@@ -55,16 +71,9 @@ const CHANNEL_STATUS_AR: Record<string, string> = {
   pending: "قيد الإعداد",
 };
 
-const PLATFORMS: Array<{ key: string; label: string; fields: CredentialField[] }> = [
-  { key: "salla", label: "سلة", fields: [{ key: "accessToken", label: "Access Token" }] },
-  {
-    key: "zid",
-    label: "زد",
-    fields: [
-      { key: "accessToken", label: "Access Token" },
-      { key: "managerToken", label: "Manager Token" },
-    ],
-  },
+const PLATFORMS: Array<{ key: string; label: string; fields: CredentialField[]; supportsOAuth?: boolean }> = [
+  { key: "salla", label: "سلة", fields: [], supportsOAuth: true },
+  { key: "zid", label: "زد", fields: [], supportsOAuth: true },
   {
     key: "shopify",
     label: "Shopify",
@@ -126,6 +135,10 @@ export function SettingsPage() {
   const [channelCreds, setChannelCreds] = useState<Record<string, string>>({});
   const [channelSubmitting, setChannelSubmitting] = useState(false);
   const [channelError, setChannelError] = useState<string | null>(null);
+  // "جارٍ الاتصال…" while the browser is being handed to Meta's wizard. Never
+  // reset on success — the whole tab navigates away and comes back through
+  // the ?connected= redirect.
+  const [whatsappConnecting, setWhatsappConnecting] = useState(false);
   const [lastVerifyToken, setLastVerifyToken] = useState<{ channelId: string; channelTypeKey: string; token: string } | null>(null);
 
   // Rotating an expired/rotated token in place — keeps the same
@@ -166,6 +179,26 @@ export function SettingsPage() {
     api.get<{ data: Integration[] }>(`/v1/stores/${activeStore.id}/integrations`).then((r) => setIntegrations(r.data));
     api.get<{ data: AiAgent }>(`/v1/stores/${activeStore.id}/knowledge/ai-agent`).then((r) => setAgent(r.data));
   }, [activeStore]);
+
+  // OAuth callback handling
+  const [oauthError, setOauthError] = useState<string | null>(null);
+  const [oauthSuccess, setOauthSuccess] = useState<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const error = params.get("error");
+    const connected = params.get("connected");
+
+    if (error) {
+      setOauthError(decodeURIComponent(error));
+      // Clear the error from URL
+      window.history.replaceState({}, "", window.location.pathname);
+    } else if (connected) {
+      setOauthSuccess(decodeURIComponent(connected));
+      window.history.replaceState({}, "", window.location.pathname);
+      reload();
+    }
+  }, [reload]);
 
   useEffect(() => reload(), [reload]);
 
@@ -373,6 +406,17 @@ export function SettingsPage() {
           أدخل بيانات الاعتماد الحقيقية الصادرة من لوحة المنصة (Meta for Developers لواتساب/إنستغرام/ماسنجر، TikTok
           for Business للأخير). اختر "قناة تجريبية" للتجربة دون أي حساب حقيقي.
         </p>
+        {oauthError && (
+          <div className="card" style={{ padding: 14, marginBottom: 18, color: "var(--critical)", fontSize: 12.5, borderColor: "var(--critical)" }}>
+            فشل الربط: {OAUTH_ERROR_AR[oauthError] ?? oauthError}
+          </div>
+        )}
+        {oauthSuccess === "whatsapp" && (
+          <div className="card" style={{ padding: 14, marginBottom: 18, color: "var(--good)", fontSize: 12.5, borderColor: "var(--good)" }}>
+            نجح الربط — تم ربط واتساب وتفعيل استقبال الرسائل تلقائيًا.
+          </div>
+        )}
+
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 14, marginBottom: 18 }}>
           {channels.map((c, i) => (
             <div key={c.id} className="card card-hover ms-enter" style={{ padding: 16, animationDelay: `${Math.min(i, 6) * 40}ms` }}>
@@ -625,15 +669,44 @@ export function SettingsPage() {
             </div>
           </label>
 
-          {channelTypeKey === "whatsapp" && (
-            <div style={{ fontSize: 12, color: "var(--text-dim)", background: "var(--surface-2)", padding: "10px 12px", borderRadius: 8 }}>
-              قبل الربط: تأكد أن حساب واتساب هذا مُضاف كأصل في Business Manager
-              الخاص بك، وأنك نفّذت <code className="mono">POST /{"{WABA-ID}"}/subscribed_apps</code> له
-              مرة واحدة. التفاصيل في docs/22-whatsapp-store-onboarding-manual.md.
-            </div>
-          )}
-
-          {channelTypeKey !== "mock" && (
+          {channelTypeKey === "whatsapp" ? (
+            <>
+              {/* Meta Embedded Signup — لا معرفات ولا رموز تُطلب من المستخدم:
+                  الزر يفتح معالج ميتا الرسمي، والخادم يكتشف WABA والرقم والرمز
+                  ويشترك في الويبهوك تلقائيًا. */}
+              <div style={{ fontSize: 12, color: "var(--text-dim)", background: "var(--surface-2)", padding: "10px 12px", borderRadius: 8 }}>
+                اضغط «ربط واتساب» وستفتح نافذة ميتا الرسمية لتسجيل الدخول واختيار حساب
+                واتساب الأعمال ورقم الهاتف — بلا أي معرفات أو رموز تُدخل يدويًا. بعد
+                إتمام المعالج تُحفظ القناة وتُفعّل الويبهوك تلقائيًا.
+              </div>
+              <div>
+                <button
+                  className="btn btn-primary btn-sm"
+                  type="button"
+                  disabled={whatsappConnecting}
+                  onClick={async () => {
+                    if (!activeStore) return;
+                    setWhatsappConnecting(true);
+                    setChannelError(null);
+                    try {
+                      // The authorize URL is fetched (Bearer header) then the
+                      // whole tab navigates into Meta's wizard. The flow comes
+                      // back to /settings?connected=whatsapp or ?error=… .
+                      const resp = await api.get<{ data: { url: string } }>(
+                        `/v1/stores/${activeStore.id}/channels/whatsapp/connect`
+                      );
+                      window.location.href = resp.data.url;
+                    } catch (err) {
+                      setWhatsappConnecting(false);
+                      setChannelError(err instanceof ApiClientError ? err.message : "تعذّر بدء ربط واتساب");
+                    }
+                  }}
+                >
+                  {whatsappConnecting ? "جارٍ الاتصال…" : "ربط واتساب"}
+                </button>
+              </div>
+            </>
+          ) : channelTypeKey !== "mock" && (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
                 معرّف الحساب الخارجي (Phone Number ID / Page ID)
@@ -646,7 +719,7 @@ export function SettingsPage() {
             </div>
           )}
 
-          {channelDef.fields.length > 0 && (
+          {channelTypeKey !== "whatsapp" && channelDef.fields.length > 0 && (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
               {channelDef.fields.map((f) => (
                 <label key={f.key} style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
@@ -664,11 +737,13 @@ export function SettingsPage() {
           )}
 
           {channelError && <div style={{ color: "var(--critical)", fontSize: 13 }}>{channelError}</div>}
-          <div>
-            <button className="btn btn-primary btn-sm" type="submit" disabled={channelSubmitting}>
-              {channelSubmitting ? "جارٍ الربط…" : "ربط القناة"}
-            </button>
-          </div>
+          {channelTypeKey !== "whatsapp" && (
+            <div>
+              <button className="btn btn-primary btn-sm" type="submit" disabled={channelSubmitting}>
+                {channelSubmitting ? "جارٍ الربط…" : "ربط القناة"}
+              </button>
+            </div>
+          )}
         </form>
       </section>
 
@@ -755,6 +830,19 @@ export function SettingsPage() {
       <section>
         <h2 style={{ fontSize: 15, margin: "0 0 4px" }}>التكاملات</h2>
         <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-dim)" }}>سلة، زد، Shopify، WooCommerce.</p>
+
+        {oauthError && (
+          <div className="card" style={{ padding: 14, marginBottom: 18, color: "var(--critical)", fontSize: 12.5, borderColor: "var(--critical)" }}>
+            فشل ربط المنصة: {oauthError}
+          </div>
+        )}
+
+        {oauthSuccess && (
+          <div className="card" style={{ padding: 14, marginBottom: 18, color: "var(--good)", fontSize: 12.5, borderColor: "var(--good)" }}>
+            تم ربط {oauthSuccess} بنجاح
+          </div>
+        )}
+
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 14, marginBottom: 18 }}>
           {integrations.map((i, idx) => (
             <div key={i.id} className="card card-hover ms-enter" style={{ padding: 16, animationDelay: `${Math.min(idx, 6) * 40}ms` }}>
@@ -806,29 +894,52 @@ export function SettingsPage() {
             </div>
           </label>
 
-          {platformDef.fields.length > 0 && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
-              {platformDef.fields.map((f) => (
-                <label key={f.key} style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
-                  {f.label}
-                  <input
-                    type="text"
-                    value={platformCreds[f.key] ?? ""}
-                    onChange={(e) => setPlatformCreds((prev) => ({ ...prev, [f.key]: e.target.value }))}
-                    required
-                    placeholder={f.placeholder}
-                  />
-                </label>
-              ))}
+          {platformDef.supportsOAuth && (
+            <div style={{ fontSize: 12, color: "var(--text-dim)", background: "var(--surface-2)", padding: "10px 12px", borderRadius: 8 }}>
+              هذه المنصة تدعم الربط عبر OAuth — اضغط على الزر أدناه للاتصال بحسابك على {platformDef.label} بشكل آمن.
             </div>
           )}
 
-          {platformError && <div style={{ color: "var(--critical)", fontSize: 13 }}>{platformError}</div>}
-          <div>
-            <button className="btn btn-primary btn-sm" type="submit" disabled={platformSubmitting}>
-              {platformSubmitting ? "جارٍ الربط…" : "ربط المنصة"}
-            </button>
-          </div>
+          {platformDef.supportsOAuth ? (
+            <div>
+              <button
+                className="btn btn-primary btn-sm"
+                type="button"
+                onClick={() => {
+                  if (!activeStore) return;
+                  window.location.href = `${BASE_URL}/v1/stores/${activeStore.id}/integrations/${platformKey}/connect`;
+                }}
+              >
+                ربط عبر {platformDef.label}
+              </button>
+            </div>
+          ) : (
+            <>
+              {platformDef.fields.length > 0 && (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+                  {platformDef.fields.map((f) => (
+                    <label key={f.key} style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
+                      {f.label}
+                      <input
+                        type="text"
+                        value={platformCreds[f.key] ?? ""}
+                        onChange={(e) => setPlatformCreds((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                        required
+                        placeholder={f.placeholder}
+                      />
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              {platformError && <div style={{ color: "var(--critical)", fontSize: 13 }}>{platformError}</div>}
+              <div>
+                <button className="btn btn-primary btn-sm" type="submit" disabled={platformSubmitting}>
+                  {platformSubmitting ? "جارٍ الربط…" : "ربط المنصة"}
+                </button>
+              </div>
+            </>
+          )}
         </form>
       </section>
     </div>

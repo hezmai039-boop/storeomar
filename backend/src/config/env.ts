@@ -75,6 +75,20 @@ export const env = {
   // useful error.
   oauthRedirectBase: process.env.OAUTH_REDIRECT_BASE ?? "http://localhost:4000",
 
+  // --- Meta Embedded Signup (WhatsApp) — docs/23-whatsapp-embedded-signup.md
+  // All optional for the same reason the Salla/Zid pair is: a deployment
+  // with no Meta App registered reports isConfigured() === false and the
+  // connect endpoint answers 503, leaving the manual-token path untouched.
+  // WHATSAPP_APP_SECRET is intentionally shared with webhook signature
+  // verification (channels/webhook.ts APP_SECRETS) — same app, same secret.
+  metaAppId: process.env.META_APP_ID,
+  metaAppSecret: process.env.WHATSAPP_APP_SECRET ?? process.env.META_APP_SECRET,
+  // The Embedded Signup configuration id from the Meta App dashboard
+  // (Facebook Login for Business → Configurations). This is what makes the
+  // consent dialog render the WhatsApp signup wizard instead of a plain
+  // Facebook Login screen.
+  whatsappEsConfigId: process.env.WHATSAPP_ES_CONFIG_ID,
+
   // Public self-serve signup. CLOSED unless explicitly opened — note this is
   // `=== "true"`, not `!== "false"`, so the safe state is what you get by
   // forgetting to set it.

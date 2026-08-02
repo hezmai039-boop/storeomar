@@ -21,6 +21,8 @@ import { simulationPublicRouter } from "./modules/simulation/publicRoutes";
 import { billingRouter } from "./modules/billing/routes";
 import { billingPublicRouter } from "./modules/billing/publicRoutes";
 import { oauthConnectRouter, oauthCallbackRouter } from "./modules/integrations/oauth/routes";
+import { whatsappEsConnectRouter, whatsappEsCallbackRouter } from "./modules/channels/embeddedSignup/routes";
+import { startWhatsAppTokenRefreshLoop } from "./modules/channels/embeddedSignup/tokenRefresh";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -106,6 +108,12 @@ app.use("/v1/public", billingPublicRouter);
 // is the single-use `state` row; see modules/integrations/oauth/routes.ts.
 app.use("/v1/integrations/oauth", oauthCallbackRouter);
 
+// Meta Embedded Signup callback — public and tokenless for the same reason
+// as the Salla/Zid callback above: Meta redirects the merchant's BROWSER
+// here with no Authorization header. Its authentication is the single-use
+// state row; see modules/channels/embeddedSignup/routes.ts.
+app.use("/v1/channels/whatsapp/oauth", whatsappEsCallbackRouter);
+
 app.use("/v1", identityRouter);
 app.use("/v1", tenancyRouter);
 app.use("/v1/stores/:storeId", channelsRouter);
@@ -114,6 +122,8 @@ app.use("/v1/stores/:storeId", ticketsRouter);
 app.use("/v1/stores/:storeId", integrationsRouter);
 // Authenticated half of the OAuth flow ("install the app" button).
 app.use("/v1/stores/:storeId", oauthConnectRouter);
+// Authenticated half of the WhatsApp Embedded Signup flow ("ربط واتساب").
+app.use("/v1/stores/:storeId", whatsappEsConnectRouter);
 app.use("/v1/stores/:storeId/ai-intelligence", aiIntelligenceRouter);
 app.use("/v1/stores/:storeId/simulation-links", simulationRouter);
 // Organization-scoped, so it gets its own prefix rather than a
@@ -128,4 +138,7 @@ app.use(errorHandler);
 app.listen(env.port, () => {
   // eslint-disable-next-line no-console
   console.log(`Maysoor backend listening on :${env.port}`);
+  // No-op unless META_APP_ID/WHATSAPP_APP_SECRET/WHATSAPP_ES_CONFIG_ID are
+  // set — see modules/channels/embeddedSignup/tokenRefresh.ts.
+  startWhatsAppTokenRefreshLoop();
 });
