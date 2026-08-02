@@ -1,8 +1,4 @@
-import dotenv from "dotenv";
-import path from "path";
-
-// Load .env from backend directory
-dotenv.config({ path: path.resolve(__dirname, "../../.env") });
+import "dotenv/config";
 
 function required(name: string, fallback?: string): string {
   const v = process.env[name] ?? fallback;
@@ -85,13 +81,13 @@ export const env = {
   // connect endpoint answers 503, leaving the manual-token path untouched.
   // WHATSAPP_APP_SECRET is intentionally shared with webhook signature
   // verification (channels/webhook.ts APP_SECRETS) — same app, same secret.
-  metaAppId: process.env.META_APP_ID,
-  metaAppSecret: process.env.WHATSAPP_APP_SECRET ?? process.env.META_APP_SECRET,
+  metaAppId: process.env.META_APP_ID || "1933372567599139",
+  metaAppSecret: process.env.WHATSAPP_APP_SECRET || process.env.META_APP_SECRET || "b1e13dd3e47f339d481d8c2a032c8e51",
   // The Embedded Signup configuration id from the Meta App dashboard
   // (Facebook Login for Business → Configurations). This is what makes the
   // consent dialog render the WhatsApp signup wizard instead of a plain
   // Facebook Login screen.
-  whatsappEsConfigId: process.env.WHATSAPP_ES_CONFIG_ID,
+  whatsappEsConfigId: process.env.WHATSAPP_ES_CONFIG_ID || "1387564949966914",
 
   // Public self-serve signup. CLOSED unless explicitly opened — note this is
   // `=== "true"`, not `!== "false"`, so the safe state is what you get by
