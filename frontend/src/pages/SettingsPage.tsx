@@ -16,10 +16,7 @@ const CHANNEL_TYPES: Array<{ key: string; label: string; fields: CredentialField
   {
     key: "whatsapp",
     label: "واتساب",
-    fields: [
-      { key: "phoneNumberId", label: "Phone Number ID" },
-      { key: "accessToken", label: "Access Token" },
-    ],
+    fields: [], // Embedded Signup - no manual fields
   },
   {
     key: "instagram",
