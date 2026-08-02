@@ -97,6 +97,9 @@ whatsappEsCallbackRouter.get(
     const back = (query: string) => res.redirect(`${env.appUrl}/settings?${query}`);
     const fail = (code: string) => back(`error=${encodeURIComponent(code)}`);
 
+    console.log("[WhatsApp ES Callback] Query Parameters:", req.query);
+    console.log("[WhatsApp ES Callback] Body:", req.body);
+
     if (!isEmbeddedSignupConfigured()) return fail("whatsapp_not_configured");
 
     // Merchant pressed cancel on the wizard, or Meta rejected the request.
@@ -104,6 +107,8 @@ whatsappEsCallbackRouter.get(
 
     const code = typeof req.query.code === "string" ? req.query.code : null;
     const state = typeof req.query.state === "string" ? req.query.state : null;
+    const businessToken = typeof req.query.business_token === "string" ? req.query.business_token : null;
+    console.log("[WhatsApp ES Callback] business_token from query:", businessToken);
     if (!code || !state) return fail("missing_code");
 
     // Claim the state in ONE statement — missing, expired and already-used
@@ -117,6 +122,12 @@ whatsappEsCallbackRouter.get(
     const stateRow = await prisma.oAuthState.findUnique({ where: { state } });
     if (!stateRow) return fail("invalid_state");
 
+    console.log("[WhatsApp ES Callback] Session (stateRow):", {
+      storeId: stateRow.storeId,
+      userId: stateRow.userId,
+      platform: stateRow.platform,
+    });
+
     // ---- Network phase (no transaction open) --------------------------------
     // Exchange → (maybe) long-lived exchange → inspect → discover → subscribe.
     // The state is already burnt: a failure anywhere below means the merchant
@@ -125,19 +136,23 @@ whatsappEsCallbackRouter.get(
     let inspection: Awaited<ReturnType<typeof inspectToken>>;
     try {
       const exchanged = await exchangeCode(code, stateRow.codeVerifier);
+      console.log("[WhatsApp ES Callback] Exchange Code Response:", exchanged);
       accessToken = exchanged.accessToken;
       if (!accessToken) throw new Error("empty access_token");
 
       inspection = await inspectToken(accessToken);
+      console.log("[WhatsApp ES Callback] Token Inspection Result:", inspection);
 
       // A token with a real expiry is a user token — trade it for the
       // ~60-day long-lived one so the channel does not die in an hour.
       // A permanent (business integration system user) token skips this.
       if (inspection.tokenType === "expiring") {
         const longLived = await exchangeForLongLivedToken(accessToken);
+        console.log("[WhatsApp ES Callback] Long-lived Token Response:", longLived);
         if (longLived.accessToken) {
           accessToken = longLived.accessToken;
           inspection = await inspectToken(accessToken);
+          console.log("[WhatsApp ES Callback] Long-lived Token Inspection:", inspection);
         }
       }
     } catch (err) {
@@ -148,8 +163,11 @@ whatsappEsCallbackRouter.get(
     if (inspection.sharedWabaIds.length === 0) {
       // The wizard completed but shared no WABA — usually the merchant
       // deselected everything on the asset-sharing screen.
+      console.log("[WhatsApp ES Callback] No WABA shared, inspection:", inspection);
       return fail("no_waba_shared");
     }
+
+    console.log("[WhatsApp ES Callback] Shared WABA IDs:", inspection.sharedWabaIds);
 
     // Discover every shared WABA's numbers and business, and subscribe the
     // app to each WABA so webhooks start flowing without any manual step.
@@ -163,10 +181,13 @@ whatsappEsCallbackRouter.get(
     const discovered: DiscoveredAccount[] = [];
     try {
       for (const wabaId of inspection.sharedWabaIds) {
+        console.log("[WhatsApp ES Callback] Discovering WABA:", wabaId);
         const [info, numbers] = await Promise.all([
           fetchWabaInfo(wabaId, accessToken),
           fetchWabaPhoneNumbers(wabaId, accessToken),
         ]);
+        console.log("[WhatsApp ES Callback] WABA Info:", info);
+        console.log("[WhatsApp ES Callback] WABA Phone Numbers:", numbers);
         await subscribeAppToWaba(wabaId, accessToken);
         for (const n of numbers) {
           if (!n.phoneNumberId) continue;
@@ -183,6 +204,8 @@ whatsappEsCallbackRouter.get(
       console.error(`[whatsapp-es] asset discovery failed for store ${stateRow.storeId}:`, err);
       return fail("discovery_failed");
     }
+
+    console.log("[WhatsApp ES Callback] Discovered Accounts:", discovered);
 
     if (discovered.length === 0) return fail("no_phone_number");
 
