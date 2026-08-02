@@ -136,9 +136,9 @@ const monthlyPlanDefs = [
     name: "المجانية",
     nameEn: "Free",
     priceHalalas: 0,
-    maxStores: 1,
-    maxUsers: 2,
-    maxAiRepliesMonthly: 100,
+    maxStores: null, // غير محدود
+    maxUsers: null, // غير محدود
+    maxAiRepliesMonthly: null, // غير محدود
     sortOrder: 1,
     features: ["جميع القنوات (واتساب، إنستغرام، ماسنجر، تيك توك، تيليجرام)", "قاعدة معرفة لمتجرك"],
   },
