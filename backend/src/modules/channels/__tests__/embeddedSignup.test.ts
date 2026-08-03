@@ -8,6 +8,11 @@ import crypto from "node:crypto";
 process.env.META_APP_ID = process.env.META_APP_ID ?? "1234567890";
 process.env.WHATSAPP_APP_SECRET = process.env.WHATSAPP_APP_SECRET ?? "test-app-secret";
 process.env.WHATSAPP_ES_CONFIG_ID = process.env.WHATSAPP_ES_CONFIG_ID ?? "9876543210";
+// Deliberately decorated: this is verbatim what a value pasted out of a
+// Markdown link into the Render dashboard looks like, and it is what made
+// Meta answer "Missing or invalid redirect_uri". The tests at the bottom of
+// this file assert the brackets never reach the authorize URL.
+process.env.OAUTH_REDIRECT_BASE = " [https://atlas-backend-grgx.onrender.com]/ ";
 
 // Dynamic import, NOT a static one: static imports hoist above the env
 // assignments above, and config/env.ts snapshots process.env at import time —
@@ -124,4 +129,44 @@ test("WABA_SUBSCRIBED_FIELDS: the six fields the product depends on", async () =
       "phone_number_quality_update",
     ]
   );
+});
+
+// ---------------------------------------------------------------------------
+// redirect_uri hygiene
+//
+// Meta compares redirect_uri byte for byte and reports any mismatch as the
+// unhelpful "Missing or invalid redirect_uri". A single stray bracket from a
+// pasted Markdown link is therefore a hard outage, not a cosmetic issue.
+// ---------------------------------------------------------------------------
+
+test("cleanUrl: strips pasted Markdown/quote decoration and trailing slashes", async () => {
+  const { cleanUrl } = await import("../../../config/env");
+  const want = "https://atlas-backend-grgx.onrender.com";
+  assert.equal(cleanUrl("[https://atlas-backend-grgx.onrender.com]"), want);
+  assert.equal(cleanUrl("  <https://atlas-backend-grgx.onrender.com>  "), want);
+  assert.equal(cleanUrl('"https://atlas-backend-grgx.onrender.com"'), want);
+  assert.equal(cleanUrl("https://atlas-backend-grgx.onrender.com///"), want);
+  // An already-clean value must survive untouched.
+  assert.equal(cleanUrl(want), want);
+});
+
+test("embeddedSignupRedirectUri: a bracketed OAUTH_REDIRECT_BASE still yields a valid URL", async () => {
+  const { embeddedSignupRedirectUri } = await graphModule;
+  assert.equal(
+    embeddedSignupRedirectUri(),
+    "https://atlas-backend-grgx.onrender.com/v1/channels/whatsapp/oauth/callback"
+  );
+});
+
+test("buildAuthorizeUrl: redirect_uri decodes back to the clean callback URL", async () => {
+  const { buildAuthorizeUrl, generatePkcePair } = await graphModule;
+  const { challenge } = generatePkcePair();
+  const url = new URL(buildAuthorizeUrl("state-123", challenge));
+  assert.equal(
+    url.searchParams.get("redirect_uri"),
+    "https://atlas-backend-grgx.onrender.com/v1/channels/whatsapp/oauth/callback"
+  );
+  // The encoded form must not carry %5B / %5D — that is the exact shape Meta
+  // rejected.
+  assert.doesNotMatch(url.search, /%5B|%5D/i);
 });

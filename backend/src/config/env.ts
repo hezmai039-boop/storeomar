@@ -6,6 +6,33 @@ function required(name: string, fallback?: string): string {
   return v;
 }
 
+/**
+ * Normalises a URL that arrived from a dashboard text box.
+ *
+ * A value pasted out of Markdown or a chat message routinely carries
+ * decoration the shell never strips: surrounding whitespace, angle or square
+ * brackets from `[https://…](…)`, quotes, or a trailing slash. For an OAuth
+ * `redirect_uri` that decoration is fatal rather than cosmetic — the value is
+ * compared byte for byte against what is registered in the provider
+ * dashboard, so a single `[` makes Meta answer "Missing or invalid
+ * redirect_uri" with no hint as to why. Stripping it here fixes it once for
+ * every consumer instead of at each call site.
+ */
+export function cleanUrl(value: string): string {
+  // One pass is not enough: `[https://host]/` hides the bracket BEHIND the
+  // trailing slash, so stripping in a fixed order leaves whichever kind of
+  // junk happened to be inner. Loop until the string stops changing.
+  let out = value.trim();
+  for (;;) {
+    const next = out
+      .replace(/^[\s[<("'`]+/, "")
+      .replace(/[\s\]>)"'`]+$/, "")
+      .replace(/\/+$/, "");
+    if (next === out) return out;
+    out = next;
+  }
+}
+
 export const env = {
   port: Number(process.env.PORT ?? 4000),
   // DATABASE_URL (used by the Prisma CLI for migrate/push/seed) connects as
@@ -55,7 +82,7 @@ export const env = {
   // browser policy that may legitimately list several origins later, while
   // this is the single canonical address a customer is sent to. Getting it
   // wrong doesn't fail loudly — it just mails out links that 404.
-  appUrl: process.env.APP_URL ?? "http://localhost:5173",
+  appUrl: cleanUrl(process.env.APP_URL ?? "http://localhost:5173"),
 
   // --- Salla / Zid app-store OAuth (docs/26-salla-zid-app-store.md) ---------
   // Deliberately all optional. A platform with no client id/secret reports
@@ -73,7 +100,7 @@ export const env = {
   // redirect_uri as an exact string, so a trailing slash or an http-vs-https
   // mismatch fails the exchange with an opaque `invalid_grant` rather than a
   // useful error.
-  oauthRedirectBase: process.env.OAUTH_REDIRECT_BASE ?? "http://localhost:4000",
+  oauthRedirectBase: cleanUrl(process.env.OAUTH_REDIRECT_BASE ?? "http://localhost:4000"),
 
   // --- Meta Embedded Signup (WhatsApp) — docs/23-whatsapp-embedded-signup.md
   // All optional for the same reason the Salla/Zid pair is: a deployment
@@ -81,13 +108,13 @@ export const env = {
   // connect endpoint answers 503, leaving the manual-token path untouched.
   // WHATSAPP_APP_SECRET is intentionally shared with webhook signature
   // verification (channels/webhook.ts APP_SECRETS) — same app, same secret.
-  metaAppId: process.env.META_APP_ID,
-  metaAppSecret: process.env.WHATSAPP_APP_SECRET ?? process.env.META_APP_SECRET,
+  metaAppId: process.env.META_APP_ID?.trim(),
+  metaAppSecret: (process.env.WHATSAPP_APP_SECRET ?? process.env.META_APP_SECRET)?.trim(),
   // The Embedded Signup configuration id from the Meta App dashboard
   // (Facebook Login for Business → Configurations). This is what makes the
   // consent dialog render the WhatsApp signup wizard instead of a plain
   // Facebook Login screen.
-  whatsappEsConfigId: process.env.WHATSAPP_ES_CONFIG_ID,
+  whatsappEsConfigId: process.env.WHATSAPP_ES_CONFIG_ID?.trim(),
 
   // Public self-serve signup. CLOSED unless explicitly opened — note this is
   // `=== "true"`, not `!== "false"`, so the safe state is what you get by
