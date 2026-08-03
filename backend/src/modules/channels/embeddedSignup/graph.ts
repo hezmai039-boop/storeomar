@@ -29,11 +29,7 @@ export const WABA_SUBSCRIBED_FIELDS = [
 ] as const;
 
 export function isEmbeddedSignupConfigured(): boolean {
-  // Check both env object and direct process.env for fallback
-  const metaAppId = env.metaAppId || process.env.META_APP_ID;
-  const metaAppSecret = env.metaAppSecret || process.env.WHATSAPP_APP_SECRET || process.env.META_APP_SECRET;
-  const whatsappEsConfigId = env.whatsappEsConfigId || process.env.WHATSAPP_ES_CONFIG_ID;
-  return Boolean(metaAppId && metaAppSecret && whatsappEsConfigId);
+  return Boolean(env.metaAppId && env.metaAppSecret && env.whatsappEsConfigId);
 }
 
 export function embeddedSignupRedirectUri(): string {

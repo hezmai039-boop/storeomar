@@ -23,42 +23,48 @@ const SWEEP_INTERVAL_MS = 12 * 60 * 60 * 1000; // twice a day
 export async function refreshExpiringWhatsAppTokens(): Promise<void> {
   if (!isEmbeddedSignupConfigured()) return;
 
-  const cutoff = new Date(Date.now() + REFRESH_WINDOW_MS);
-  const candidates = await prisma.channelAccount.findMany({
-    where: {
-      tokenType: "expiring",
-      tokenExpiresAt: { not: null, lt: cutoff },
-      status: { not: "disconnected" },
-      channelType: { key: "whatsapp" },
-    },
-    select: { id: true, storeId: true, credentialsEncrypted: true },
-  });
+  try {
+    const cutoff = new Date(Date.now() + REFRESH_WINDOW_MS);
+    const candidates = await prisma.channelAccount.findMany({
+      where: {
+        tokenType: "expiring",
+        tokenExpiresAt: { not: null, lt: cutoff },
+        status: { not: "disconnected" },
+        channelType: { key: "whatsapp" },
+      },
+      select: { id: true, storeId: true, credentialsEncrypted: true },
+    });
 
-  for (const account of candidates) {
-    try {
-      const creds = JSON.parse(decryptSecret(account.credentialsEncrypted)) as Record<string, unknown>;
-      const currentToken = typeof creds.accessToken === "string" ? creds.accessToken : null;
-      if (!currentToken) continue;
+    for (const account of candidates) {
+      try {
+        const creds = JSON.parse(decryptSecret(account.credentialsEncrypted)) as Record<string, unknown>;
+        const currentToken = typeof creds.accessToken === "string" ? creds.accessToken : null;
+        if (!currentToken) continue;
 
-      const refreshed = await exchangeForLongLivedToken(currentToken);
-      if (!refreshed.accessToken) continue;
-      const inspection = await inspectToken(refreshed.accessToken);
+        const refreshed = await exchangeForLongLivedToken(currentToken);
+        if (!refreshed.accessToken) continue;
+        const inspection = await inspectToken(refreshed.accessToken);
 
-      await prisma.channelAccount.update({
-        where: { id: account.id },
-        data: {
-          credentialsEncrypted: encryptSecret(JSON.stringify({ ...creds, accessToken: refreshed.accessToken })),
-          tokenType: inspection.tokenType,
-          tokenExpiresAt: inspection.expiresAt,
-          tokenScopes: inspection.scopes,
-        },
-      });
-      console.log(`[whatsapp-es] refreshed token for channel_account ${account.id}`);
-    } catch (err) {
-      // Logged and left for the next sweep — the current token may still be
-      // valid for days, so failing loudly here would be premature.
-      console.error(`[whatsapp-es] token refresh failed for channel_account ${account.id}:`, err);
+        await prisma.channelAccount.update({
+          where: { id: account.id },
+          data: {
+            credentialsEncrypted: encryptSecret(JSON.stringify({ ...creds, accessToken: refreshed.accessToken })),
+            tokenType: inspection.tokenType,
+            tokenExpiresAt: inspection.expiresAt,
+            tokenScopes: inspection.scopes,
+          },
+        });
+        console.log(`[whatsapp-es] refreshed token for channel_account ${account.id}`);
+      } catch (err) {
+        // Logged and left for the next sweep — the current token may still be
+        // valid for days, so failing loudly here would be premature.
+        console.error(`[whatsapp-es] token refresh failed for channel_account ${account.id}:`, err);
+      }
     }
+  } catch (err) {
+    // Database connection error or other system-level failure — log and
+    // return without crashing the server. The next sweep will retry.
+    console.error(`[whatsapp-es] token refresh sweep failed:`, err);
   }
 }
 
