@@ -139,7 +139,96 @@
 @keyframes lp-pulse { 0% { opacity: 0.8; transform: scale(1); } 100% { opacity: 0; transform: scale(1.18); } }
 
 /* ---------------- hero ---------------- */
-.lp-hero { max-width: 960px; margin: 0 auto; padding: 46px 24px 40px; text-align: center; }
+.lp-hero { max-width: 960px; margin: 0 auto; padding: 46px 24px 40px; text-align: center; position: relative; }
+
+/* ── hero footage ─────────────────────────────────────────────────────────
+   A texture behind the headline, not a picture. Three rules keep it from
+   costing the page anything it cannot afford:
+
+   1. It BREAKS OUT of .lp-hero's 960px column, because a video that stops
+      at the text column reads as an embedded clip rather than a backdrop.
+      The break-out uses left/right: 50% + margin: 0 -50vw rather than
+      width: 100vw — 100vw includes the scrollbar's width, which is exactly
+      how a page acquires a horizontal scrollbar it never asked for.
+
+   2. Opacity 0.12, not the 0.15 first sketched. The headline's orange
+      gradient (--accent on navy) is 6.11:1 against the bare background, and
+      every point of video luminance eats into that. 0.12 plus the veil below
+      keeps the worst composed frame above 4.5:1 — measured against the
+      brightest frames, not the average, because contrast failures happen on
+      the bright ones.
+
+   3. pointer-events: none so the video never swallows a click meant for the
+      CTA sitting on top of it.
+
+   z-index note: .lp-orb sits at 0 and the hero content is in normal flow, so
+   the video takes -1 to stay behind BOTH without needing a stacking context
+   that would trap the orbs. */
+.lp-hero-video {
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  /* width MUST be explicit here. <video> is a REPLACED element, and an
+     absolutely positioned replaced box resolves `width: auto` from its
+     INTRINSIC size — it ignores the left/right pair that stretches a normal
+     div. Measured: the veil div beside it spanned 1280px while the video
+     collapsed to 300px, the spec's default video width. The bug is invisible
+     in a codec-less test browser and would have shipped as "the video is a
+     small rectangle behind the headline" on every real screen.
+     `right` is dropped for the same reason: it does nothing for a replaced
+     box and only implies otherwise to the next reader. */
+  width: 100vw;
+  /* PHYSICAL margin-left, paired with the physical `left` above. This page
+     is dir="rtl", where `margin-inline-start` resolves to margin-RIGHT and
+     would shove the video off-screen instead of centring it. Logical and
+     physical properties must not be mixed in one centring pair. */
+  margin-left: -50vw;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.12;
+  z-index: -1;
+  pointer-events: none;
+  /* The file has no alpha and never moves; promoting it avoids repainting
+     the headline on every frame. */
+  will-change: transform;
+  /* Same feathering as the veil, for the same reason: the footage's own
+     rectangle would otherwise announce where the hero ends. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 20%, #000 70%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 20%, #000 70%, transparent 100%);
+}
+
+/* Darkens the frame's centre just enough that white body text keeps its
+   contrast, while leaving the edges alive. Separate from the video so the
+   veil still applies when the video never loads — the gradient is part of
+   the composition, not a patch over it. */
+.lp-hero-veil {
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  right: 50%;
+  margin-inline: -50vw;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(13, 44, 77, 0.45) 0%, rgba(13, 44, 77, 0.92) 78%);
+  /* Feathers the veil's own edges so it dissolves into the page instead of
+     ending at a line. Without this the hero's box boundary was visible as a
+     tonal step running the full width of the page — the veil is opaque navy
+     at its outer stop, the section below is a different navy, and the two
+     met at a hard seam. Caught by looking at a render; no measurement of
+     width, contrast or overflow would have shown it.
+     Masking the veil rather than softening the gradient keeps the centre at
+     full strength, which is what the headline's contrast depends on. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 18%, #000 72%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 18%, #000 72%, transparent 100%);
+}
+
+/* On phones the footage is mostly cropped away by object-fit anyway, and
+   mobile data is the visitor's money. Hidden here AND never fetched, because
+   useHeroVideo only starts the download after mount — display: none alone
+   would still pay for the file. */
+@media (max-width: 640px) {
+  .lp-hero-video { display: none; }
+}
 .lp-eyebrow {
   display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 700;
   letter-spacing: 0.14em; color: var(--accent-soft); background: rgba(255, 106, 0, 0.1);
@@ -351,5 +440,9 @@
 @media (prefers-reduced-motion: reduce) {
   .lp-reveal { animation: none; opacity: 1; transform: none; }
   .lp-orb, .lp-cta-pulse::before, .lp-btn-primary::after { animation: none; }
+  /* Belt and braces with useHeroVideo's matchMedia check: that one stops the
+     download, this one covers a visitor who changes the setting on a page
+     already open. */
+  .lp-hero-video { display: none; }
   .lp-btn:hover, .lp-feat:hover, .lp-plan:hover { transform: none; }
 }

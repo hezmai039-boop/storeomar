@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../api/client";
@@ -6,6 +6,80 @@ import type { PublicPlan } from "../api/types";
 import { PlanRequestDialog } from "./PlanRequestDialog";
 import { LogoLockup } from "../components/Logo";
 import "./LandingPage.css";
+
+/**
+ * Starts the hero's background footage AFTER first paint, and only for
+ * visitors who want motion.
+ *
+ * Two things it deliberately does not do:
+ *
+ *   It does not let the markup autoplay. `autoplay` + `preload="none"` is a
+ *   contradiction the browser resolves in autoplay's favour, so the 2.6 MB
+ *   file would be fetched immediately anyway and compete with the CSS and JS
+ *   that decide when the headline paints. Holding the fetch until after
+ *   mount is the entire point of the attribute.
+ *
+ *   It does not treat a failed play() as an error worth surfacing. Browsers
+ *   reject it for reasons that are not faults — a data-saver setting, iOS
+ *   Low Power Mode, an unfocused tab. The page is designed to look finished
+ *   with no video at all (navy background, ambient orbs), so the correct
+ *   response to a rejection is silence.
+ *
+ * prefers-reduced-motion is honoured in JS as well as CSS because CSS can
+ * only hide the element — it cannot stop the download. Someone who asked the
+ * system for less motion should not pay for footage they will never see.
+ */
+function useHeroVideo() {
+  const ref = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    let cancelled = false;
+    const start = () => {
+      if (cancelled || !ref.current) return;
+      // `muted` is set here as well as in JSX because React writes it as a
+      // DOM *property* and never as an *attribute* — verified in a real
+      // browser: `hasAttribute("muted")` is false while `.muted` is true.
+      // The property is what the autoplay policy actually reads, so JSX
+      // alone happens to work today; asserting it before play() removes the
+      // dependency on that happening to stay true, since the failure mode is
+      // silent (play() rejects, catch swallows it, and the hero is simply
+      // never animated with nothing logged).
+      ref.current.muted = true;
+      // Setting preload here rather than in the markup keeps the "do not
+      // fetch yet" promise honest: until this line runs, no request exists.
+      ref.current.preload = "auto";
+      ref.current.load();
+      void ref.current.play().catch(() => {
+        /* see note above — a refusal to autoplay is not a failure state */
+      });
+    };
+
+    // requestIdleCallback yields to anything the browser still considers
+    // urgent; the timeout is the Safari fallback, which has no such API.
+    const w = window as Window & { requestIdleCallback?: (cb: () => void) => number };
+    const id = w.requestIdleCallback ? w.requestIdleCallback(start) : window.setTimeout(start, 900);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(id as number);
+      // Detaching the source stops an in-flight download when the visitor
+      // navigates away mid-fetch, instead of letting 2.6 MB finish for a
+      // page they have already left.
+      const v = ref.current;
+      if (v) {
+        v.pause();
+        v.removeAttribute("src");
+        v.load();
+      }
+    };
+  }, []);
+
+  return ref;
+}
 
 // The store owner / sales contact the "اطلب متجرك" buttons open — the real
 // business WhatsApp line (international format, no +).
@@ -135,6 +209,7 @@ function yearlySaving(group: PlanGroup): { halalas: number; percent: number } | 
 export function LandingPage() {
   const { me } = useAuth();
   const dashboardHref = me ? (me.isOwner ? "/overview" : "/inbox") : "/login";
+  const heroVideoRef = useHeroVideo();
 
   // The catalogue comes from the API, not a constant in this file: the whole
   // point of putting plans on the landing page is that the page and the
@@ -195,6 +270,32 @@ export function LandingPage() {
       </nav>
 
       <header className="lp-hero">
+        {/* Ambient hero footage, at 0.12 opacity over navy — a texture, not a
+            picture. Nothing is read from it, so it is aria-hidden and carries
+            no captions track.
+
+            preload="none" is the load-bearing attribute: this file is 2.6 MB
+            and the hero headline is the LCP element. Letting the browser
+            fetch it eagerly would put a multi-megabyte download in front of
+            the one paint that decides whether the page feels fast — on a
+            landing page whose whole job is the first three seconds. It is
+            fetched only after mount, by useHeroVideo below.
+
+            No poster, deliberately: the navy background IS the fallback, and
+            a poster would be a second asset competing for the same early
+            bytes it exists to hide. */}
+        <video
+          ref={heroVideoRef}
+          className="lp-hero-video"
+          preload="none"
+          loop
+          muted
+          playsInline
+          aria-hidden="true"
+          tabIndex={-1}
+          src="/hero.mp4"
+        />
+        <div className="lp-hero-veil" aria-hidden="true"></div>
         <div className="lp-eyebrow lp-reveal lp-d1">✦ منصة إدارة المتاجر والذكاء الاصطناعي</div>
         <h1 className="lp-reveal lp-d2">
           متجرك يردّ على عملائه فورًا — <span className="hl">حتى وأنت نائم</span>
